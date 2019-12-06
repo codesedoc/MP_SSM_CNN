@@ -8,6 +8,8 @@ import numpy as np
 import re
 import torch
 import os
+import random
+import utils.word_embedding as word_embedding
 from utils import word_embedding
 
 class DataItem:
@@ -23,6 +25,7 @@ class DataItem:
     def get_tensor(self):
         pass
 
+countttt =0
 class MSRPInput(DataItem):
     def convert_data_form(self):
         word_dictionary = word_embedding.get_dictionary_instance()
@@ -48,6 +51,19 @@ class MSRPInput(DataItem):
         result = torch.from_numpy(self.sentence).type(torch.float32)
         return result
 
+    def remove_word_not_in_embedding_dictionary(self):
+        global  countttt
+        default_vector = word_embedding.get_dictionary_instance().default_vector()
+        temp = []
+        for  i in range(len(self.sentence)):
+            if np.all(self.sentence[i] == default_vector):
+                temp.insert(0,i)
+                countttt += 1
+        for index in temp:
+            self.sentence = np.delete(self.sentence, index, axis=0)
+        # temp =temp
+
+
 class MSRPLabel(DataItem):
     def convert_data_form(self):
         self.label = int(self.original_data)
@@ -57,6 +73,7 @@ class MSRPLabel(DataItem):
     def get_tensor(self):
         result =  torch.tensor(self.label)
         return result
+
 
 class DataElement:
     def __init__(self, **items):
@@ -79,8 +96,9 @@ class DataExample(DataElement):
 
 
 class MSRPDataExample(DataExample):
-    def __init__(self, input_sentence:MSRPInput, label:MSRPLabel):
-        super().__init__(input_sentence=input_sentence, label=label)
+    def __init__(self, input_sentence1:MSRPInput, input_sentence2:MSRPInput, label:MSRPLabel):
+        super().__init__(input_sentence1=input_sentence1, input_sentence2=input_sentence2, label=label)
+        self.input_align_length = -1
 
     def __getitem__(self, item):
         result = super().__getitem__(item)
@@ -88,11 +106,35 @@ class MSRPDataExample(DataExample):
             raise ValueError
         return result
 
-    def get_example_pair(self):
-        input_data, label_data= self.members['input_sentence'], self.members['label']
-        if (type(input_data) is not MSRPInput) or (type(label_data) is not MSRPLabel):
+    def get_example_pair(self, gpu_type=False):
+        input_data1, input_data2, label_data= self['input_sentence1'], self['input_sentence2'], self['label']
+        if (type(input_data1) is not MSRPInput) or (type(input_data2) is not MSRPInput) or (type(label_data) is not MSRPLabel):
             raise TypeError
-        return input_data.get_tensor(), label_data.get_tensor()
+        result = input_data1.get_tensor(), input_data2.get_tensor(), label_data.get_tensor()
+        if self.input_align_length !=-1:
+            result[0] = align_tensor(result[0], 0, self.input_align_length)
+            result[1] = align_tensor(result[1], 0, self.input_align_length)
+
+        if gpu_type:
+            temp = []
+            for data in result:
+                temp.append(data.cuda())
+            result = tuple(temp)
+        return result
+
+    def remove_word_not_in_embedding_dictionary(self):
+        input_data1, input_data2 = self['input_sentence1'], self['input_sentence2']
+        input_data1.remove_word_not_in_embedding_dictionary()
+        input_data2.remove_word_not_in_embedding_dictionary()
+
+
+def align_tensor(tensor, dim, length):
+    size = tensor.size()
+    size[dim] = length - size[dim]
+    temp = torch.zeros(*size)
+    result = torch.cat([tensor, temp], dim=dim)
+    return result
+
 
 
 # class DataArray:
@@ -108,15 +150,33 @@ class MyDataSet(torch_data.dataset.Dataset):
 
         super().__init__()
         self.data_array = data_array
+        self.use_gpu_flag = False
+
 
     def __len__(self):
         return len(self.data_array)
 
     def __getitem__(self, item):
-        result = self.data_array[item].get_example_pair()
-        if type(result[0]) != torch.Tensor or type(result[1])!=torch.Tensor:
-            raise TypeError
-        return self.data_array[item].get_example_pair()
+        result = self.data_array[item].get_example_pair(self.use_gpu_flag)
+        for r in result:
+            if not isinstance(r, torch.Tensor):
+                raise TypeError
+
+        return result
+
+    def set_data_type_to_gpu(self):
+        self.use_gpu_flag = True
+
+    def set_data_type_to_cpu(self):
+        self.use_gpu_flag = False
+
+    def set_data_align_length(self, length = -1):
+        for data in self.data_array:
+            data.input_align_length = length
+
+    def remove_word_not_in_embedding_dictionary(self):
+        for data in self.data_array:
+            data.remove_word_not_in_embedding_dictionary()
 
 
 class DataManager:
@@ -137,14 +197,17 @@ class DataManager:
 
 
 class MSRPDataManager(DataManager):
-    def __init__(self, original_file):
-        self.data_set1 = None
-        self.data_set2 = None
+    def __init__(self, original_file, name):
+        self.data_set = None
+        self.max_length = -1
+        self.batch_size = 1
+        self.number_of_word_not_in_dictionary = 0
+        self.number_of_word = 0
+        self.name = name
         DataManager.__init__(self, original_file)
 
     def format_original_data(self):
-        example1_list = []
-        example2_list = []
+        example_list = []
         self.original_data = self.original_data[1:]
         word_count = 0
         no_find_word = {}
@@ -154,39 +217,50 @@ class MSRPDataManager(DataManager):
             label = MSRPLabel(result[0])
             input_sentence1 = MSRPInput(result[3])
             input_sentence2 = MSRPInput(result[4])
-            example1 = MSRPDataExample(input_sentence=input_sentence1, label=label)
-            example2 = MSRPDataExample(input_sentence=input_sentence2,  label=label)
-
-            example1_list.append(example1)
-            example2_list.append(example2)
+            example = MSRPDataExample(input_sentence1=input_sentence1, input_sentence2=input_sentence2, label=label)
+            example_list.append(example)
             word_count += input_sentence1.word_count + input_sentence2.word_count
             no_find_word.update(input_sentence1.no_find_word)
             no_find_word.update(input_sentence2.no_find_word)
 
+        self.number_of_word = word_count
+        self.number_of_word_not_in_dictionary = len(no_find_word)
         log_str = "total word:{}, no_in_dictionary_word:{}\n".format(word_count, len(no_find_word))
         log_str += str(no_find_word)
-        file_tool.save_data(log_str, file_tool.PathManager.word_no_in_dictionary_file, 'w')
-        example1_array = np.array(example1_list, dtype=np.object)
-        example2_array = np.array(example2_list, dtype=np.object)
-        self.data_set1 = MyDataSet(example1_array)
-        self.data_set2 = MyDataSet(example2_array)
+        file_tool.save_data(log_str, file_tool.PathManager.word_no_in_dictionary_file+self.name+".txt", 'w')
+        example_array = np.array(example_list, dtype=np.object)
+        self.data_set = MyDataSet(example_array)
+        self.get_max_length_of_sentence()
 
-    def get_data_loader(self, batch_size, drop_last):
-        return torch_data.dataloader.DataLoader(self.data_set1, batch_size=batch_size, drop_last=drop_last),\
-               torch_data.dataloader.DataLoader(self.data_set2, batch_size=batch_size, drop_last=drop_last)
-
+    def get_data_loader(self, drop_last, batch_size = None):
+        if batch_size is not None:
+            batch_size = self.batch_size
+        return torch_data.dataloader.DataLoader(self.data_set, batch_size=batch_size, drop_last=drop_last)
 
     def get_max_length_of_sentence(self):
-        max_length = 0
-        for data in self.data_set1:
-            input_data = data[0]
-            if len(input_data) > max_length:
-                max_length = len(input_data)
-        for data in self.data_set1:
-            input_data = data[0]
-            if len(input_data) > max_length:
-                max_length = len(input_data)
-        return max_length
+        if self.max_length == -1:
+            max_length = 0
+            for data in self.data_set:
+                input_data = data[0]
+                if len(input_data) > max_length:
+                    max_length = len(input_data)
+            self.max_length = max_length
+
+        return self.max_length
+
+    def set_data_gpu_type(self, use_gpu):
+        if use_gpu:
+            self.data_set.set_data_type_to_gpu()
+        else:
+            self.data_set.set_data_type_to_cpu()
+
+    def data_align(self):
+        max_length = self.get_max_length_of_sentence()
+        self.data_set.set_data_align_length(max_length)
+
+    def remove_word_not_in_embedding_dictionary(self):
+        self.data_set.remove_word_not_in_embedding_dictionary()
+
 
 MSRPC_Train_Manager_Single_Instance = None
 MSRPC_Test_Manager_Single_Instance = None
@@ -198,7 +272,7 @@ def get_msrpc_manager(re_build = False):
         if (not re_build) and os.path.isfile(file_tool.PathManager.msrpc_train_data_manager_path):
             train_manager = file_tool.load_data_pickle(file_tool.PathManager.msrpc_train_data_manager_path)
         else:
-            train_manager = MSRPDataManager(file_tool.PathManager.msrpc_train_data_set_path)
+            train_manager = MSRPDataManager(file_tool.PathManager.msrpc_train_data_set_path, "train")
             file_tool.save_data_pickle(train_manager, file_tool.PathManager.msrpc_train_data_manager_path)
         MSRPC_Train_Manager_Single_Instance = train_manager
 
@@ -207,7 +281,7 @@ def get_msrpc_manager(re_build = False):
         if (not re_build) and os.path.isfile(file_tool.PathManager.msrpc_test_data_manager_path):
             test_manager = file_tool.load_data_pickle(file_tool.PathManager.msrpc_test_data_manager_path)
         else:
-            test_manager = MSRPDataManager(file_tool.PathManager.msrpc_test_data_set_path)
+            test_manager = MSRPDataManager(file_tool.PathManager.msrpc_test_data_set_path, "test")
             file_tool.save_data_pickle(test_manager, file_tool.PathManager.msrpc_test_data_manager_path)
 
         MSRPC_Test_Manager_Single_Instance = test_manager
@@ -215,33 +289,25 @@ def get_msrpc_manager(re_build = False):
 
 
 def test():
-    # train_manager = MSRPDataManager(file_tool.PathManager.msrpc_train_data_set_path)
-    # loader1, loader2 = train_manager.get_data_loader(batch_size=1, drop_last=True)
-    # train_data1 =[]
-    # train_data2 = []
-    # for batch_datas, batch_labels in loader1:
-    #     train_data1.append((batch_datas,batch_labels))
-    #
-    # for batch_datas, batch_labels in loader2:
-    #     train_data2.append((batch_datas,batch_labels))
-    #
-    # if len(train_data1) != len(train_data2):
-    #     raise ValueError
-    #
-    #
-    # count = 10
-    # repeat = 0
-    # for i in range(count):
-    #     index = [random.randint(0, 299) for i in range(count)]
-    #     batch1 = train_data1[i][0][0][[0],index]
-    #     batch2 = train_data2[i][0][0][[0],index]
-    #
-    # for i in range(count):
-    #     if batch1[i]==batch2[i]:
-    #         repeat += 1
-    # print('重复率：{}'.format(repeat/count))
+    train_manager = MSRPDataManager(file_tool.PathManager.msrpc_train_data_set_path)
+    loader = train_manager.get_data_loader(batch_size=1, drop_last=True)
+    train_data = []
+    for batch_input1s, batch_input2s, batch_labels in loader:
+        train_data.append((batch_input1s, batch_input2s ,batch_labels))
 
-    get_msrpc_manager(re_build=False)
+    count = 10
+    repeat = 0
+
+    index = [random.randint(0, 299) for i in range(count)]
+    batch1 = train_data[0][0][0][[0],index]
+    batch2 = train_data[0][1][0][[0],index]
+
+    for i in range(count):
+        if batch1[i]==batch2[i]:
+            repeat += 1
+    print('重复率：{}'.format(repeat/count))
+
+    get_msrpc_manager(re_build=True)
 
 if __name__ == '__main__':
     test()

@@ -55,7 +55,7 @@ class PathManager:
     result_path = os.path.join(base_dir, 'result')
     log_path = os.path.join(result_path,'log')
     error_glove_embedding_data_file = os.path.join(log_path, 'error_glove_embedding_data.txt')
-    word_no_in_dictionary_file = os.path.join(log_path, 'word_no_in_dictionary.txt')
+    word_no_in_dictionary_file = os.path.join(log_path, 'word_no_in_dictionary')
 
     model_path = os.path.join(result_path,'model')
     entire_model_file =  os.path.join(model_path, 'entire_model.pkl')

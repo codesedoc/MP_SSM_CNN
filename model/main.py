@@ -7,7 +7,7 @@ import model.entire_model as entire_model
 import torch
 import model as model_py
 import utils.simple_progress_bar as simple_progress_bar
-
+import model.pre_process as pre_process
 
 def null_grad_fn(x):
     print(x)
@@ -34,69 +34,58 @@ class MSRPLoss(torch.nn.Module):
         return l_sum
 
 
-# def evolution(test_loader):
-#
+def evaluation(test_loader, train_model):
+    correct_count = 0
+    count =0
+    for input_sentence1s, input_sentence2s, labels in test_loader:
+        result = train_model(input_sentence1s, input_sentence2s)
+        for i, out in enumerate(result):
+            l = result[i].argmax()
+            target_index = labels[i]
+            if l == target_index:
+                correct_count +=1
+            count +=1
+    accuracy = correct_count/ count
+    return accuracy
 
-def training(train_manager, epoch, gpu_use):
+
+def training(train_manager, epoch, test_manager=None, rebuild_model = False):
     pb = simple_progress_bar.SimpleProgressBar()
-    loader1, loader2 = train_manager.get_data_loader(batch_size=1, drop_last=True)
-    model = entire_model.EntireModel(number=model_py.num_filter_a, word_vector_dim=300)
+    train_loader = train_manager.get_data_loader(drop_last=False)
+    if test_manager is not None:
+        test_loader = train_manager.get_data_loader(drop_last=False)
+    if rebuild_model:
+        model = entire_model.EntireModel(number=model_py.num_filter_a, word_vector_dim=300)
+    else:
+        model = file_tool.load_data_pickle(file_tool.PathManager.entire_model_file)
     losser = MSRPLoss()
-    if gpu_use:
-        model.cuda()
-        losser.cuda()
+    optimizer = torch.optim.SGD(params=model.parameters(), lr=0.01)
     # file_tool.save_data_pickle(model, file_tool.PathManager.entire_model_file)
     # model = file_tool.load_data_pickle(file_tool.PathManager.entire_model_file)
-    optimizer = torch.optim.SGD(params=model.parameters(), lr=0.01)
-    batch1_list = []
-    batch2_list = []
-    for batch1, batch2 in zip(loader1, loader2):
-        batch1[0] = batch1[0].permute(0, 2, 1)
-        batch2[0] = batch2[0].permute(0, 2, 1)
-        if gpu_use:
-            batch1[0] = batch1[0].cuda()
-            batch2[0] = batch2[0].cuda()
-            batch1[1] = batch1[1].cuda()
-        batch1_list.append(batch1)
-        batch2_list.append(batch2)
     for e in range(epoch):
-        i = 0
         loss_sum = 0
-        for batch1, batch2 in zip(batch1_list, batch2_list):
-            i+=1
-            # print(sys.getsizeof(batch1))
-
-            # print(round(batch1[0][0][0][0].tolist(),4))
-            # if (round(batch1[0][0][0][0].tolist(),4) == 0.2833) and round(batch1[0][0][0][1].tolist(),4) == -0.6571 \
-            #         or round(batch2[0][0][0][0].tolist(),4) == 0.2833 and round(batch2[0][0][0][1].tolist(),4) == -0.6571:
-
-
+        for input_sentence1s, input_sentence2s, labels in train_loader:
             optimizer.zero_grad()
-            result = model(batch1[0], batch2[0])
-            loss = losser(result, batch1[1])
+            result = model(input_sentence1s, input_sentence2s)
+            loss = losser(result, labels)
             loss.backward()
-            # try:
-            #     loss.backward()
-            # except RuntimeError as error:
-            #     print(error)
-            #     if loss.grad_fn is None:
-            #         loss = loss
-            #         pass
-            #     continue
             optimizer.step()
             loss_sum += loss
 
-            if i % 20 == 0:
-                loss_sum = loss_sum/20
-                print('epoch:{}  loss:{}'.format(e,loss_sum))
-                loss_sum = 0
-            pb.update((i % 20) * 100 / 19)
+
+        print('epoch:{}  loss:{}'.format(e,loss_sum))
+        if test_manager is not None:
+            evaluation(test_loader, losser)
+        # pb.update(e* 100 / epoch)
     file_tool.save_data_pickle(model, file_tool.PathManager.entire_model_file)
 
 
 def main():
     train_manager, test_manager = data_tool.get_msrpc_manager(re_build=False)
-    training(train_manager, 500, False)
+    processor = pre_process.Preprocessor()
+    train_manager = processor.pre_process(data_manager=train_manager,batch_size= 32, use_gpu=False, data_align= True, remove_error_word_vector=True)
+    test_manager = processor.pre_process(data_manager=test_manager,batch_size= 32, use_gpu=False, data_align= True, remove_error_word_vector=True)
+    training(train_manager, 500, test_manager, rebuild_model = True)
 
 
 

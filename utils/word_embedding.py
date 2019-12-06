@@ -7,11 +7,14 @@ from utils import simple_progress_bar
 
 SingleDictionaryInstance = None
 
+
 def get_dictionary_instance(*args, **key):
     global SingleDictionaryInstance
     if SingleDictionaryInstance is None:
         SingleDictionaryInstance = Dictionary(vector_length=300, test_flag=False)
     return SingleDictionaryInstance
+
+
 class Dictionary:
     def __init__(self,vector_length, test_flag):
         self.vector_length = vector_length
@@ -77,6 +80,8 @@ class Dictionary:
             find = False
         return result, find
 
+    def default_vector(self):
+        return np.zeros(self.vector_length)
 
 
 def test():
