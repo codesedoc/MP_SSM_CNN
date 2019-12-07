@@ -5,14 +5,11 @@ import torch
 import model
 
 class EntireModel(torch.nn.Module):
-    def __init__(self,number,word_vector_dim):
+    def __init__(self,number,word_vector_dim, wss, compare_units):
         super().__init__()
-        wss = [1, 2, 3]
-        poolings =[sentence_model.pooling_model_dict['max'],
-                   sentence_model.pooling_model_dict['min'],
-                   sentence_model.pooling_model_dict['mean']]
-        compare_units = ['cos','l2','l1']
-
+        poolings = [sentence_model.pooling_model_dict['max'],
+                    sentence_model.pooling_model_dict['min'],
+                    sentence_model.pooling_model_dict['mean']]
         horizontal_compare = True
         self.sentence_model = sentence_model.SentenceModel(block_type='BlockA', wss=wss, poolings=poolings, number=number,
                                                            word_vector_dim=word_vector_dim)

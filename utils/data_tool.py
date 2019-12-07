@@ -25,12 +25,14 @@ class DataItem:
     def get_tensor(self):
         pass
 
-countttt =0
+# countttt =0
+# nocountttt =0
 class MSRPInput(DataItem):
     def convert_data_form(self):
+        global nocountttt
         word_dictionary = word_embedding.get_dictionary_instance()
-        self.word_count = 0
-        self.no_find_word = {}
+        self.no_find_word_list = []
+        self.no_find_word_dict = {}
         if type(self.original_data) != str:
             raise ValueError
         new_sentence = []
@@ -41,14 +43,30 @@ class MSRPInput(DataItem):
                 # if len(re.findall(r'[a-zA-Z]',substr))>1 and substr
                 #     raise ValueError
                 vector, find_flag = word_dictionary.word2vector(substr)
-                self.word_count += 1
                 new_sentence.append(vector)
                 if not find_flag:
-                    self.no_find_word[word] = vector
+                    # nocountttt +=1
+                    self.no_find_word_list.append((word, vector))
+                    self.no_find_word_dict[word] = vector
         self.sentence = np.array(new_sentence, dtype=np.float)
 
+    def align_sentence(self, length):
+        shape = self.sentence.shape
+        word_dictionary = word_embedding.get_dictionary_instance()
+        dim = 0
+        for i, size in enumerate(shape):
+            if size != word_dictionary.vector_length:
+                dim = i
+        shape = list(shape)
+        if(length - shape[dim] <0):
+            return
+        shape[dim] = length - shape[dim]
+        temp = torch.zeros(*shape)
+        self.sentence = np.concatenate([self.sentence, temp], axis=dim)
+        print(self.sentence )
     def get_tensor(self):
-        result = torch.from_numpy(self.sentence).type(torch.float32)
+        result = torch.from_numpy(self.sentence.T).type(torch.float32)
+        print(result)
         return result
 
     def remove_word_not_in_embedding_dictionary(self):
@@ -58,10 +76,10 @@ class MSRPInput(DataItem):
         for  i in range(len(self.sentence)):
             if np.all(self.sentence[i] == default_vector):
                 temp.insert(0,i)
-                countttt += 1
+                # countttt += 1
         for index in temp:
             self.sentence = np.delete(self.sentence, index, axis=0)
-        # temp =temp
+        print(self.sentence )
 
 
 class MSRPLabel(DataItem):
@@ -110,16 +128,16 @@ class MSRPDataExample(DataExample):
         input_data1, input_data2, label_data= self['input_sentence1'], self['input_sentence2'], self['label']
         if (type(input_data1) is not MSRPInput) or (type(input_data2) is not MSRPInput) or (type(label_data) is not MSRPLabel):
             raise TypeError
-        result = input_data1.get_tensor(), input_data2.get_tensor(), label_data.get_tensor()
-        if self.input_align_length !=-1:
-            result[0] = align_tensor(result[0], 0, self.input_align_length)
-            result[1] = align_tensor(result[1], 0, self.input_align_length)
 
+        input_data1.align_sentence(self.input_align_length)
+        input_data2.align_sentence(self.input_align_length)
+        result = [input_data1.get_tensor(), input_data2.get_tensor(), label_data.get_tensor()]
         if gpu_type:
             temp = []
             for data in result:
                 temp.append(data.cuda())
-            result = tuple(temp)
+            result = temp
+        result = tuple(result)
         return result
 
     def remove_word_not_in_embedding_dictionary(self):
@@ -128,12 +146,7 @@ class MSRPDataExample(DataExample):
         input_data2.remove_word_not_in_embedding_dictionary()
 
 
-def align_tensor(tensor, dim, length):
-    size = tensor.size()
-    size[dim] = length - size[dim]
-    temp = torch.zeros(*size)
-    result = torch.cat([tensor, temp], dim=dim)
-    return result
+
 
 
 
@@ -210,7 +223,8 @@ class MSRPDataManager(DataManager):
         example_list = []
         self.original_data = self.original_data[1:]
         word_count = 0
-        no_find_word = {}
+        no_find_word_count = 0
+        no_find_word_list = []
         for data in self.original_data:
             re_pattern = r'.+?[\t\n]'
             result=re.findall(re_pattern, data)
@@ -219,21 +233,23 @@ class MSRPDataManager(DataManager):
             input_sentence2 = MSRPInput(result[4])
             example = MSRPDataExample(input_sentence1=input_sentence1, input_sentence2=input_sentence2, label=label)
             example_list.append(example)
-            word_count += input_sentence1.word_count + input_sentence2.word_count
-            no_find_word.update(input_sentence1.no_find_word)
-            no_find_word.update(input_sentence2.no_find_word)
+            word_count += len(input_sentence1.sentence) + len(input_sentence2.sentence)
+            no_find_word_count += len(input_sentence1.no_find_word_list) + len(input_sentence2.no_find_word_list)
+            no_find_word_list.extend(input_sentence1.no_find_word_list)
+            no_find_word_list.extend(input_sentence2.no_find_word_list)
 
         self.number_of_word = word_count
-        self.number_of_word_not_in_dictionary = len(no_find_word)
-        log_str = "total word:{}, no_in_dictionary_word:{}\n".format(word_count, len(no_find_word))
-        log_str += str(no_find_word)
-        file_tool.save_data(log_str, file_tool.PathManager.word_no_in_dictionary_file+self.name+".txt", 'w')
+        self.number_of_word_not_in_dictionary = no_find_word_count
+        log_str = "total word:{}, no_in_dictionary_word:{}\n".format(word_count, self.number_of_word_not_in_dictionary)
+        log_str += str(no_find_word_list)
+        file_tool.save_data(log_str, file_tool.change_filename_by_append \
+                            (file_tool.PathManager.word_no_in_dictionary_file, self.name), 'w')
         example_array = np.array(example_list, dtype=np.object)
         self.data_set = MyDataSet(example_array)
         self.get_max_length_of_sentence()
 
     def get_data_loader(self, drop_last, batch_size = None):
-        if batch_size is not None:
+        if batch_size is None:
             batch_size = self.batch_size
         return torch_data.dataloader.DataLoader(self.data_set, batch_size=batch_size, drop_last=drop_last)
 

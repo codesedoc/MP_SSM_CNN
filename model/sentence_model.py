@@ -40,12 +40,8 @@ class BlockA(torch.nn.Module):
         for pooling in self.pooling_list:
             temp1 = []
             for con_model in self.con_model_list:
-                if con_model.kernel_size[0] == model.ws_max:
-                    zero_expand = torch.zeros(input_data.size()[0], input_data.size()[1], model.ws_max-input_data.size()[2]).cuda()
-                    input_data = torch.cat([input_data, zero_expand], dim=-1)
                 try:
                     con_output = con_model(input_data)
-
                 except RuntimeError as e:
                     print(e)
                     raise

@@ -55,7 +55,7 @@ def training(train_manager, epoch, test_manager=None, rebuild_model = False):
     if test_manager is not None:
         test_loader = train_manager.get_data_loader(drop_last=False)
     if rebuild_model:
-        model = entire_model.EntireModel(number=model_py.num_filter_a, word_vector_dim=300)
+        model = entire_model.EntireModel(number=model_py.num_filter_a, word_vector_dim=300, compare_units=model_py.compare_units, wss= model_py.wss)
     else:
         model = file_tool.load_data_pickle(file_tool.PathManager.entire_model_file)
     losser = MSRPLoss()
@@ -64,27 +64,28 @@ def training(train_manager, epoch, test_manager=None, rebuild_model = False):
     # model = file_tool.load_data_pickle(file_tool.PathManager.entire_model_file)
     for e in range(epoch):
         loss_sum = 0
-        for input_sentence1s, input_sentence2s, labels in train_loader:
+        batch_size = len(train_loader)
+        for index, training_example in enumerate(train_loader):
+            input_sentence1s, input_sentence2s, labels = training_example
             optimizer.zero_grad()
             result = model(input_sentence1s, input_sentence2s)
             loss = losser(result, labels)
             loss.backward()
             optimizer.step()
             loss_sum += loss
-
+            pb.update(index * 100 / batch_size)
 
         print('epoch:{}  loss:{}'.format(e,loss_sum))
         if test_manager is not None:
             evaluation(test_loader, losser)
-        # pb.update(e* 100 / epoch)
     file_tool.save_data_pickle(model, file_tool.PathManager.entire_model_file)
 
 
 def main():
     train_manager, test_manager = data_tool.get_msrpc_manager(re_build=False)
     processor = pre_process.Preprocessor()
-    train_manager = processor.pre_process(data_manager=train_manager,batch_size= 32, use_gpu=False, data_align= True, remove_error_word_vector=True)
-    test_manager = processor.pre_process(data_manager=test_manager,batch_size= 32, use_gpu=False, data_align= True, remove_error_word_vector=True)
+    train_manager = processor.pre_process(data_manager=train_manager, batch_size= 32, use_gpu=False, data_align= True, remove_error_word_vector=True)
+    test_manager = processor.pre_process(data_manager=test_manager, batch_size= 32, use_gpu=False, data_align= True, remove_error_word_vector=True)
     training(train_manager, 500, test_manager, rebuild_model = True)
 
 

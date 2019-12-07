@@ -57,5 +57,12 @@ class PathManager:
     error_glove_embedding_data_file = os.path.join(log_path, 'error_glove_embedding_data.txt')
     word_no_in_dictionary_file = os.path.join(log_path, 'word_no_in_dictionary')
 
-    model_path = os.path.join(result_path,'model')
+    model_path = os.path.join(result_path,'model.txt')
     entire_model_file =  os.path.join(model_path, 'entire_model.pkl')
+
+
+    def change_filename_by_append(self, file_path, append_str):
+        (dir_path, file_name_ext) = os.path.split(file_path)
+        (filename, extension) = os.path.splitext(file_name_ext)
+        new_path = dir_path+r'\r'+filename + append_str +extension
+        return new_path
