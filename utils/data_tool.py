@@ -63,23 +63,22 @@ class MSRPInput(DataItem):
         shape[dim] = length - shape[dim]
         temp = torch.zeros(*shape)
         self.sentence = np.concatenate([self.sentence, temp], axis=dim)
-        print(self.sentence )
+        # print(self.sentence)
+
     def get_tensor(self):
         result = torch.from_numpy(self.sentence.T).type(torch.float32)
-        print(result)
+        # print(result)
         return result
 
     def remove_word_not_in_embedding_dictionary(self):
-        global  countttt
         default_vector = word_embedding.get_dictionary_instance().default_vector()
         temp = []
         for  i in range(len(self.sentence)):
             if np.all(self.sentence[i] == default_vector):
                 temp.insert(0,i)
-                # countttt += 1
         for index in temp:
             self.sentence = np.delete(self.sentence, index, axis=0)
-        print(self.sentence )
+        # print(self.sentence )
 
 
 class MSRPLabel(DataItem):
@@ -89,7 +88,7 @@ class MSRPLabel(DataItem):
             raise ValueError
 
     def get_tensor(self):
-        result =  torch.tensor(self.label)
+        result = torch.tensor(self.label, dtype=torch.uint8)
         return result
 
 
@@ -242,7 +241,7 @@ class MSRPDataManager(DataManager):
         self.number_of_word_not_in_dictionary = no_find_word_count
         log_str = "total word:{}, no_in_dictionary_word:{}\n".format(word_count, self.number_of_word_not_in_dictionary)
         log_str += str(no_find_word_list)
-        file_tool.save_data(log_str, file_tool.change_filename_by_append \
+        file_tool.save_data(log_str, file_tool.PathManager.change_filename_by_append \
                             (file_tool.PathManager.word_no_in_dictionary_file, self.name), 'w')
         example_array = np.array(example_list, dtype=np.object)
         self.data_set = MyDataSet(example_array)
@@ -288,7 +287,7 @@ def get_msrpc_manager(re_build = False):
         if (not re_build) and os.path.isfile(file_tool.PathManager.msrpc_train_data_manager_path):
             train_manager = file_tool.load_data_pickle(file_tool.PathManager.msrpc_train_data_manager_path)
         else:
-            train_manager = MSRPDataManager(file_tool.PathManager.msrpc_train_data_set_path, "train")
+            train_manager = MSRPDataManager(file_tool.PathManager.msrpc_train_data_set_path, "train_manager")
             file_tool.save_data_pickle(train_manager, file_tool.PathManager.msrpc_train_data_manager_path)
         MSRPC_Train_Manager_Single_Instance = train_manager
 
@@ -297,7 +296,7 @@ def get_msrpc_manager(re_build = False):
         if (not re_build) and os.path.isfile(file_tool.PathManager.msrpc_test_data_manager_path):
             test_manager = file_tool.load_data_pickle(file_tool.PathManager.msrpc_test_data_manager_path)
         else:
-            test_manager = MSRPDataManager(file_tool.PathManager.msrpc_test_data_set_path, "test")
+            test_manager = MSRPDataManager(file_tool.PathManager.msrpc_test_data_set_path, "test_manager")
             file_tool.save_data_pickle(test_manager, file_tool.PathManager.msrpc_test_data_manager_path)
 
         MSRPC_Test_Manager_Single_Instance = test_manager

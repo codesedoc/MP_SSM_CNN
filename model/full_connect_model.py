@@ -9,7 +9,7 @@ class FullConnectModel(torch.nn.Module):
         for i in range(1,len(scales)):
             layer_list.append(torch.nn.Linear(scales[i-1],scales[i], bias=True))
             active_list.append(torch.nn.Tanh())
-        active_list[-1] = torch.nn.LogSoftmax()
+        active_list[-1] = torch.nn.LogSoftmax(dim=-1)
         self.layer_list =  torch.nn.ModuleList(layer_list)
         self.active_list = torch.nn.ModuleList(active_list)
     def forward(self, input_data):

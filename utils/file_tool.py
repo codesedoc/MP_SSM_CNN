@@ -60,9 +60,13 @@ class PathManager:
     model_path = os.path.join(result_path,'model.txt')
     entire_model_file =  os.path.join(model_path, 'entire_model.pkl')
 
-
-    def change_filename_by_append(self, file_path, append_str):
+    @staticmethod
+    def change_filename_by_append(file_path, append_str):
         (dir_path, file_name_ext) = os.path.split(file_path)
         (filename, extension) = os.path.splitext(file_name_ext)
         new_path = dir_path+r'\r'+filename + append_str +extension
         return new_path
+
+    @staticmethod
+    def append_filename_to_dir_path(dir_path, filename, extent='txt'):
+        return os.path.join(dir_path, filename+'.'+extent)

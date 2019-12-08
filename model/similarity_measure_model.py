@@ -3,7 +3,7 @@ import model.sentence_model as sentence_model
 from abc import abstractmethod
 
 import math
-
+import time
 def check_distance_input_data(x,y):
     if torch.isnan(x).sum() + torch.isnan(y).sum()> 0:
         print(torch.isnan(x).sum()) + torch.isnan(y).sum()
@@ -90,11 +90,11 @@ class ComparisonModel(torch.nn.Module):
 
 
 class HorizontalComparisonModel(ComparisonModel):
-    def compare_algorithm(self, input_data1, input_data2):
+    def compare_algorithm_method1(self, input_data1, input_data2):
 
         result_batch = []
-        input_data1 = input_data1.data.permute(0,1,3,2)
-        input_data2 = input_data2.data.permute(0,1,3,2)
+        input_data1 = input_data1.permute(0,1,3,2)
+        input_data2 = input_data2.permute(0,1,3,2)
         for s in range(len(input_data1)):
             result = []
             for pool_index in range(len(input_data1[s])):
@@ -115,9 +115,101 @@ class HorizontalComparisonModel(ComparisonModel):
         # result_batch = torch.autograd.Variable(result_batch, requirs_grad=requirs_grad)
         return result_batch
 
+    def compare_algorithm_method2(self, input_data1, input_data2):
+        input_data1 = input_data1.permute(0, 1, 3, 2)
+        input_data2 = input_data2.permute(0, 1, 3, 2)
+        shape1 = input_data1.size()
+        shape2 = input_data2.size()
+
+        shape = shape1
+        if shape1 != shape2:
+            raise ValueError
+
+        input_data1_temp = input_data1.reshape(shape[0], -1, shape[-1])
+        input_data2_temp = input_data2.reshape(shape[0], -1, shape[-1])
+        pairs_count = input_data1_temp.size()[1]
+        result = torch.Tensor(shape[0], pairs_count, len(self.compare_units))
+        for s in range(shape[0]):
+            for i in range(pairs_count):
+                temp = calculate_compare_units(input_data1_temp[s][i], input_data2_temp[s][i],
+                                               self.compare_units)
+                result[s][i] = temp
+        return result
+
+    def compare_algorithm_method3(self, input_data1, input_data2):
+        input_data1 = input_data1.permute(0, 1, 3, 2)
+        input_data2 = input_data2.permute(0, 1, 3, 2)
+        shape1 = input_data1.size()
+        shape2 = input_data2.size()
+
+        shape = shape1
+        if shape1 != shape2:
+            raise ValueError
+
+        input_data1_temp = input_data1.reshape(shape[0], -1, shape[-1])
+        input_data2_temp = input_data2.reshape(shape[0], -1, shape[-1])
+        pairs_count = input_data1_temp.size()[1]
+        result = torch.Tensor(shape[0], pairs_count, len(self.compare_units))
+        for s in range(shape[0]):
+            for i in range(pairs_count):
+                temp2 = torch.cdist(input_data1_temp[s][i].unsqueeze(dim=0), input_data2_temp[s][i].unsqueeze(dim=0), 2).squeeze()
+                temp3 = torch.cdist(input_data1_temp[s][i].unsqueeze(dim=0), input_data2_temp[s][i].unsqueeze(dim=0), 1).squeeze()
+                # temp1 = cos_distance(input_data1_temp[s][i], input_data2_temp[s][i]).squeeze()
+                temp1 = torch.nn.functional.normalize(input_data1_temp[s][i],dim=0).dot(torch.nn.functional.normalize(input_data2_temp[s][i],dim=0)).squeeze()
+                result[s][i] = torch.stack([temp1, temp2,temp3],dim=0)
+        return result
+
+    def compare_algorithm_method3(self, input_data1, input_data2):
+        input_data1 = input_data1.permute(0, 1, 3, 2)
+        input_data2 = input_data2.permute(0, 1, 3, 2)
+        shape1 = input_data1.size()
+        shape2 = input_data2.size()
+
+        shape = shape1
+        if shape1 != shape2:
+            raise ValueError
+
+        input_data1_temp = input_data1.reshape(shape[0], -1, shape[-1])
+        input_data2_temp = input_data2.reshape(shape[0], -1, shape[-1])
+        pairs_count = input_data1_temp.size()[1]
+        result = []
+        for s in range(shape[0]):
+            result_temp1 = []
+            for i in range(pairs_count):
+                temp2 = torch.cdist(input_data1_temp[s][i].unsqueeze(dim=0), input_data2_temp[s][i].unsqueeze(dim=0), 2).squeeze()
+                temp3 = torch.cdist(input_data1_temp[s][i].unsqueeze(dim=0), input_data2_temp[s][i].unsqueeze(dim=0), 1).squeeze()
+                # temp1 = cos_distance(input_data1_temp[s][i], input_data2_temp[s][i]).squeeze()
+                temp1 = torch.nn.functional.normalize(input_data1_temp[s][i],dim=0).dot(torch.nn.functional.normalize(input_data2_temp[s][i],dim=0)).squeeze()
+                result_temp1.append(torch.stack([temp1, temp2,temp3],dim=0))
+            result.append(torch.stack(result_temp1,dim=0))
+        result = torch.stack(result, dim=0)
+        return result
+
+    def compare_algorithm(self, input_data1, input_data2):
+        # start = time.time()
+        # reslut1 = self.compare_algorithm_method1(input_data1, input_data2)
+        # end = time.time()
+        # print("method1:{}".format(end - start))
+        # start = time.time()
+        # result2 =self.compare_algorithm_method2(input_data1, input_data2)
+        # end = time.time()
+        # print("method2:{}".format(end-start))
+
+        start = time.time()
+        result3 = self.compare_algorithm_method3(input_data1, input_data2)
+        end = time.time()
+        print("method3:{}".format(end - start))
+
+
+        # print(reslut1)
+        # print(result2)
+        # print(result3)
+        # if (reslut1!=result2).any() or (reslut1!=result3).any():
+        #     raise ValueError
+        return result3
 
 class VerticalComparisonModelForBlockA(ComparisonModel):
-    def compare_algorithm(self, input_data1, input_data2):
+    def compare_algorithm_old(self, input_data1, input_data2):
         result_batch = []
         for s in range(len(input_data1)):
             result = []
@@ -137,6 +229,24 @@ class VerticalComparisonModelForBlockA(ComparisonModel):
         result_batch = torch.stack(result_batch, dim=0)
         # result_batch = torch.autograd.Variable(result_batch,requirs_grad=requirs_grad)
         return result_batch
+    def compare_algorithm(self, input_data1, input_data2):
+        shape1 = input_data1.size()
+        shape2 = input_data2.size()
+        if shape1 != shape2:
+            raise ValueError
+        shape = shape1
+
+        input_data1 = input_data1.reshape(shape[0], -1, shape[-1])
+        input_data2 = input_data2.reshape(shape[0], -1, shape[-1])
+        pairs_count = input_data1.size()[1]
+        result = torch.Tensor(shape[0], pairs_count*pairs_count, shape[-1])
+        for s in range(shape[0]):
+            for i in range(pairs_count):
+                for j in range(pairs_count):
+                    temp = calculate_compare_units(input_data1[s][i], input_data2[s][j], self.compare_units)
+                    result[s][i*pairs_count+j] = temp
+        result_old = self.compare_algorithm_old(input_data1, input_data2)
+        return result
 
 class VerticalComparisonModelForBlockB(ComparisonModel):
     def compare_algorithm(self, input_data1, input_data2):
@@ -174,4 +284,6 @@ class SimilarityMeasureModel(torch.nn.Module):
                 self.compare_model = VerticalComparisonModelForBlockB(compare_units)
 
     def forward(self, input_data1, input_data2):
-         return  self.compare_model(input_data1,input_data2)
+        result = self.compare_model(input_data1,input_data2)
+        result = result.reshape(result.size()[0], -1)
+        return result

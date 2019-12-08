@@ -2,7 +2,7 @@ import model.sentence_model as sentence_model
 import model.similarity_measure_model as similarity_measure_model
 import model.full_connect_model as full_connect_model
 import torch
-import model
+import time
 
 class EntireModel(torch.nn.Module):
     def __init__(self,number,word_vector_dim, wss, compare_units):
@@ -21,10 +21,22 @@ class EntireModel(torch.nn.Module):
         self.full_connect_model = full_connect_model.FullConnectModel((input_layer, 250, 2))
 
     def forward(self, input_data1, input_data2):
-        result1=self.sentence_model(input_data1)
+
+        begin_time = time.time()
+        result1 = self.sentence_model(input_data1)
         result2 = self.sentence_model(input_data2)
-        result=self.similarity_measure_model(result1,result2)
-        result = result.reshape(result.size()[0], -1)
-        result=self.full_connect_model(result)
+        end_time = time.time()
+        print('sentence_model_run_time：{}'.format(end_time - begin_time))
+
+        begin_time = end_time
+        result = self.similarity_measure_model(result1,result2)
+        end_time = time.time()
+        print('similarity_measure_model_run_time：{}'.format(end_time - begin_time))
+
+        begin_time = end_time
+        result = self.full_connect_model(result)
+        end_time = time.time()
+        print('full_connect_model_run_time：{}'.format(end_time - begin_time))
+
         return result
 
