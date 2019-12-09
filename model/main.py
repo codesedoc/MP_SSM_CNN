@@ -19,9 +19,17 @@ class MSRPLoss(torch.nn.Module):
         super().__init__()
 
     def forward(self, outputs, labels):
+        if outputs.is_cuda != labels.is_cuda:
+            raise TypeError
+
         l_sum = torch.tensor(0, dtype=torch.float)
+        if outputs.is_cuda:
+            l_sum =l_sum.cuda()
+
         for i, out in enumerate(outputs):
             l = torch.tensor(0, dtype=torch.float)
+            if outputs.is_cuda:
+                l = l.cuda()
             ground_score = out[int(labels[i])]
             for j,yi in enumerate(out):
                 if j != labels[i]:
@@ -58,6 +66,7 @@ def training(train_manager, epoch, learn_model, test_manager=None, ):
         test_loader = train_manager.get_data_loader(drop_last=False)
 
     losser = MSRPLoss()
+    losser.cuda()
     optimizer = torch.optim.SGD(params=learn_model.parameters(), lr=0.01)
     # file_tool.save_data_pickle(model, file_tool.PathManager.entire_model_file)
     # model = file_tool.load_data_pickle(file_tool.PathManager.entire_model_file)
@@ -68,8 +77,12 @@ def training(train_manager, epoch, learn_model, test_manager=None, ):
             input_sentence1s, input_sentence2s, labels = training_example
             optimizer.zero_grad()
             result = learn_model(input_sentence1s, input_sentence2s)
+            # loss = losser(result, labels.type(torch.float).unsqueeze(dim=1).expand_as(result))
             loss = losser(result, labels)
+            star_time = time.time()
             loss.backward()
+            end_time = time.time()
+            print('back_ward_time:{}'.format(end_time-star_time))
             optimizer.step()
             loss_sum += loss
             # pb.update(index * 100 / batch_size)
@@ -97,8 +110,8 @@ def main(rebuild_model=False, rebuild_data_manager=False, use_gpu = False):
     learn_model = get_learn_model(rebuild=rebuild_model , use_gpu=use_gpu)
     train_manager, test_manager = data_tool.get_msrpc_manager(re_build=False)
     processor = pre_process.Preprocessor()
-    train_manager = processor.pre_process(data_manager=train_manager, batch_size= 32, use_gpu=use_gpu, data_align= True, remove_error_word_vector=True, rebuild=rebuild_data_manager)
-    test_manager = processor.pre_process(data_manager=test_manager, batch_size= 32, use_gpu=use_gpu, data_align= True, remove_error_word_vector=True, rebuild=rebuild_data_manager)
+    train_manager = processor.pre_process(data_manager=train_manager, batch_size= 64, use_gpu=use_gpu, data_align= True, remove_error_word_vector=True, rebuild=rebuild_data_manager)
+    test_manager = processor.pre_process(data_manager=test_manager, batch_size= 64, use_gpu=use_gpu, data_align= True, remove_error_word_vector=True, rebuild=rebuild_data_manager)
     end_time = time.time()
     print('prepare_time：{}'.format(end_time-begin_time))
     training(train_manager, 500, learn_model, test_manager)

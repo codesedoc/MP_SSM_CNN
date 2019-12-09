@@ -65,9 +65,10 @@ class MSRPInput(DataItem):
         self.sentence = np.concatenate([self.sentence, temp], axis=dim)
         # print(self.sentence)
 
-    def get_tensor(self):
+    def get_tensor(self, use_gpu):
         result = torch.from_numpy(self.sentence.T).type(torch.float32)
-        # print(result)
+        if use_gpu:
+            result = result.cuda()
         return result
 
     def remove_word_not_in_embedding_dictionary(self):
@@ -87,8 +88,10 @@ class MSRPLabel(DataItem):
         if self.label != 0 and self.label != 1:
             raise ValueError
 
-    def get_tensor(self):
+    def get_tensor(self, use_gpu):
         result = torch.tensor(self.label, dtype=torch.uint8)
+        if use_gpu:
+            result =result.cuda()
         return result
 
 
@@ -123,19 +126,19 @@ class MSRPDataExample(DataExample):
             raise ValueError
         return result
 
-    def get_example_pair(self, gpu_type=False):
+    def get_example_pair(self, gpu_type):
         input_data1, input_data2, label_data= self['input_sentence1'], self['input_sentence2'], self['label']
         if (type(input_data1) is not MSRPInput) or (type(input_data2) is not MSRPInput) or (type(label_data) is not MSRPLabel):
             raise TypeError
 
         input_data1.align_sentence(self.input_align_length)
         input_data2.align_sentence(self.input_align_length)
-        result = [input_data1.get_tensor(), input_data2.get_tensor(), label_data.get_tensor()]
-        if gpu_type:
-            temp = []
-            for data in result:
-                temp.append(data.cuda())
-            result = temp
+        result = [input_data1.get_tensor(gpu_type), input_data2.get_tensor(gpu_type), label_data.get_tensor(gpu_type)]
+        # if gpu_type:
+        #     temp = []
+        #     for data in result:
+        #         temp.append(data.cuda())
+        #     result = temp
         result = tuple(result)
         return result
 

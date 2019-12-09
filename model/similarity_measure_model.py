@@ -6,7 +6,7 @@ import math
 import time
 def check_distance_input_data(x,y):
     if torch.isnan(x).sum() + torch.isnan(y).sum()> 0:
-        print(torch.isnan(x).sum()) + torch.isnan(y).sum()
+        print(torch.isnan(x).sum()), torch.isnan(y).sum()
         raise ValueError
 
     if (not isinstance(x[0], torch.autograd.Variable)) or (not isinstance(y[0], torch.autograd.Variable)):
@@ -99,14 +99,7 @@ class HorizontalComparisonModel(ComparisonModel):
             result = []
             for pool_index in range(len(input_data1[s])):
                 for num in range(len(input_data1[s][pool_index])):
-                    # for compare_unit in self.compare_units:
-                    #     temp = compare_unit(input_data1[s][pool_index][num], input_data2[s][pool_index][num])
-                    #     requirs_grad = temp.requirs_grad
-                    #     temp = temp.data
-                    #     result.append(temp)
-                    # if torch.isnan(temp).sum()>0:
-                    #     print(torch.isnan(temp).sum())
-                    #     raise ValueError
+
                     temp=calculate_compare_units(input_data1[s][pool_index][num], input_data2[s][pool_index][num], self.compare_units)
                     result.append(temp)
             result = torch.stack(result, dim=0)
@@ -129,6 +122,8 @@ class HorizontalComparisonModel(ComparisonModel):
         input_data2_temp = input_data2.reshape(shape[0], -1, shape[-1])
         pairs_count = input_data1_temp.size()[1]
         result = torch.Tensor(shape[0], pairs_count, len(self.compare_units))
+        if input_data1.is_cuda:
+            result =result.cuda()
         for s in range(shape[0]):
             for i in range(pairs_count):
                 temp = calculate_compare_units(input_data1_temp[s][i], input_data2_temp[s][i],
@@ -149,7 +144,10 @@ class HorizontalComparisonModel(ComparisonModel):
         input_data1_temp = input_data1.reshape(shape[0], -1, shape[-1])
         input_data2_temp = input_data2.reshape(shape[0], -1, shape[-1])
         pairs_count = input_data1_temp.size()[1]
-        result = torch.Tensor(shape[0], pairs_count, len(self.compare_units))
+
+        result = torch.Tensor(shape[0], pairs_count, 3)
+        if input_data1.is_cuda:
+            result =result.cuda()
         for s in range(shape[0]):
             for i in range(pairs_count):
                 temp2 = torch.cdist(input_data1_temp[s][i].unsqueeze(dim=0), input_data2_temp[s][i].unsqueeze(dim=0), 2).squeeze()
@@ -159,7 +157,8 @@ class HorizontalComparisonModel(ComparisonModel):
                 result[s][i] = torch.stack([temp1, temp2,temp3],dim=0)
         return result
 
-    def compare_algorithm_method3(self, input_data1, input_data2):
+
+    def compare_algorithm_method4(self, input_data1, input_data2):
         input_data1 = input_data1.permute(0, 1, 3, 2)
         input_data2 = input_data2.permute(0, 1, 3, 2)
         shape1 = input_data1.size()
@@ -168,46 +167,69 @@ class HorizontalComparisonModel(ComparisonModel):
         shape = shape1
         if shape1 != shape2:
             raise ValueError
-
         input_data1_temp = input_data1.reshape(shape[0], -1, shape[-1])
         input_data2_temp = input_data2.reshape(shape[0], -1, shape[-1])
-        pairs_count = input_data1_temp.size()[1]
         result = []
         for s in range(shape[0]):
-            result_temp1 = []
-            for i in range(pairs_count):
-                temp2 = torch.cdist(input_data1_temp[s][i].unsqueeze(dim=0), input_data2_temp[s][i].unsqueeze(dim=0), 2).squeeze()
-                temp3 = torch.cdist(input_data1_temp[s][i].unsqueeze(dim=0), input_data2_temp[s][i].unsqueeze(dim=0), 1).squeeze()
-                # temp1 = cos_distance(input_data1_temp[s][i], input_data2_temp[s][i]).squeeze()
-                temp1 = torch.nn.functional.normalize(input_data1_temp[s][i],dim=0).dot(torch.nn.functional.normalize(input_data2_temp[s][i],dim=0)).squeeze()
-                result_temp1.append(torch.stack([temp1, temp2,temp3],dim=0))
-            result.append(torch.stack(result_temp1,dim=0))
+            # temp1 = torch.nn.functional.normalize(input_data1_temp[s], dim=1).mm(torch.nn.functional.normalize(input_data2_temp[s], dim=1).T).squeeze()
+            # temp1 = temp1.diag(diagonal=0)
+            # temp2 = torch.cdist(input_data1_temp[s], input_data2_temp[s], 2).squeeze()
+            # temp2 = temp2.diag(diagonal=0)
+            # temp3 = torch.cdist(input_data1_temp[s], input_data2_temp[s], 1).squeeze()
+            # temp3 = temp3.diag(diagonal=0)
+
+            x = input_data1_temp[s]
+            y = input_data2_temp[s]
+            temp1 = torch.nn.functional.normalize(x, dim=1).mm(
+                torch.nn.functional.normalize(y, dim=1).T).squeeze()
+            temp1 = temp1.diag(diagonal=0)
+
+            temp2 = torch.sqrt((x - y).mm((x - y).T).diag(diagonal=0))
+
+            temp3 = torch.abs((x - y)).mm(torch.ones_like((x - y).T)).diag(diagonal=0)
+
+            result.append(torch.stack([temp1, temp2,temp3],dim=1))
         result = torch.stack(result, dim=0)
         return result
 
     def compare_algorithm(self, input_data1, input_data2):
         # start = time.time()
-        # reslut1 = self.compare_algorithm_method1(input_data1, input_data2)
+        # result1 = self.compare_algorithm_method1(input_data1, input_data2)
         # end = time.time()
         # print("method1:{}".format(end - start))
+        # # start = time.time()
+        # # result2 =self.compare_algorithm_method2(input_data1, input_data2)
+        # # end = time.time()
+        # # print("method2:{}".format(end-start))
+        #
         # start = time.time()
-        # result2 =self.compare_algorithm_method2(input_data1, input_data2)
+        # result3 = self.compare_algorithm_method3(input_data1, input_data2)
         # end = time.time()
-        # print("method2:{}".format(end-start))
-
-        start = time.time()
-        result3 = self.compare_algorithm_method3(input_data1, input_data2)
-        end = time.time()
-        print("method3:{}".format(end - start))
-
-
+        # print("method3:{}".format(end - start))
+        # # print(result3)
+        # start = time.time()
+        result4 = self.compare_algorithm_method4(input_data1, input_data2)
+        # end = time.time()
+        # print("method4:{}".format(end - start))
         # print(reslut1)
         # print(result2)
-        # print(result3)
-        # if (reslut1!=result2).any() or (reslut1!=result3).any():
-        #     raise ValueError
-        return result3
 
+        # print(result4)
+        # for i, f in enumerate((result1-result3).cpu().detach().apply_(compara_tensor_data).tolist()):
+        #     for j, f1 in enumerate(f):
+        #         for k, f2 in enumerate(f1):
+        #             if not f2:
+        #                 print(i,j,k)
+        # if not ((result1-result3).cpu().detach().apply_(compara_tensor_data)).type(torch.bool).all():
+        #     raise ValueError
+        # if not ((result4-result3).cpu().detach().apply_(compara_tensor_data)).type(torch.bool).all():
+        #     raise ValueError
+        return result4
+def compara_tensor_data(data):
+    n = 4
+    temp = data * math.pow(10,n)
+    temp = round(temp)
+    return temp == 0
 class VerticalComparisonModelForBlockA(ComparisonModel):
     def compare_algorithm_old(self, input_data1, input_data2):
         result_batch = []
