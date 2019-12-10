@@ -184,11 +184,13 @@ class HorizontalComparisonModel(ComparisonModel):
                 torch.nn.functional.normalize(y, dim=1).T).squeeze()
             temp1 = temp1.diag(diagonal=0)
 
-            temp2 = torch.sqrt((x - y).mm((x - y).T).diag(diagonal=0))
-
+            temp2 = torch.sqrt(torch.abs(torch.pow(x - y, 2).mm(torch.ones_like((x - y).T)).diag(diagonal=0)))
+            temp21 = torch.sum(torch.pow(x - y, 2), dim=1)
             temp3 = torch.abs((x - y)).mm(torch.ones_like((x - y).T)).diag(diagonal=0)
-
-            result.append(torch.stack([temp1, temp2,temp3],dim=1))
+            temp31 = torch.sum(torch.abs(x - y), dim=1)
+            if (temp21<0).any():
+                raise ValueError
+            result.append(torch.stack([temp31, temp21,temp31],dim=1))
         result = torch.stack(result, dim=0)
         return result
 

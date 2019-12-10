@@ -89,14 +89,14 @@ def calculate1_1(input_data1, input_data2):
             torch.nn.functional.normalize(y, dim=1).T).squeeze()
         temp1 = temp1.diag(diagonal=0)
 
-        temp2 = torch.sqrt((x - y).mm((x - y).T).diag(diagonal=0))
+        temp2 = torch.sqrt(torch.pow(x - y, 2).mm(torch.ones_like((x - y).T)).diag(diagonal=0))
 
         temp3 = torch.abs((x - y)). mm(torch.ones_like ((x - y).T)).diag(diagonal=0)
 
         # temp3 = torch.cdist(input_data1_temp[s], input_data2_temp[s], 1).squeeze()
         # temp3 = temp3.diag(diagonal=0)
         # temp3 = temp3[index_list, index_list]
-        result.append(torch.stack([temp1,temp2,temp3], dim=1))
+        result.append(torch.stack([temp2,temp2,temp2], dim=1))
     result = torch.stack(result, dim=0)
     return result
 
@@ -145,7 +145,7 @@ t3 = torch.rand(64,3,3,525, requires_grad=True).cuda()
 t4 = torch.rand(64,3,3,525, requires_grad=True).cuda()
 start = time.time()
 # result2 = calculate1(t1, t2)
-result3 = calculate1(t1, t2)
+result3 = calculate1_1(t1, t2)
 # result = torch.cat([result2,result3],dim=-1)
 result =result3
 result.backward(torch.ones(*result.size()).cuda())
