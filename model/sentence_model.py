@@ -45,7 +45,7 @@ class BlockA(torch.nn.Module):
                 except RuntimeError as e:
                     print(e)
                     raise
-                pooling.kernel_size = con_output.size()[-1]
+                pooling.kernel_size = int(con_output.size()[-1])
                 temp1.append(pooling(con_output).squeeze(-1))
             temp2 = torch.stack(temp1, dim=1)
             result.append(temp2)

@@ -56,9 +56,17 @@ class PathManager:
     log_path = os.path.join(result_path,'log')
     error_glove_embedding_data_file = os.path.join(log_path, 'error_glove_embedding_data.txt')
     word_no_in_dictionary_file = os.path.join(log_path, 'word_no_in_dictionary')
+    model_log_path =  os.path.join(log_path, "model_log")
+    model_running_data_log_file = os.path.join(model_log_path, "model_running_data")
 
-    model_path = os.path.join(result_path,'model.txt')
+
+    model_path = os.path.join(result_path,'model')
     entire_model_file =  os.path.join(model_path, 'entire_model.pkl')
+
+    visualization_path = os.path.join(result_path, 'visualization')
+    tensorboard_runs_path = os.path.join(visualization_path, 'tensorboard_runs')
+
+
 
     @staticmethod
     def change_filename_by_append(file_path, append_str):

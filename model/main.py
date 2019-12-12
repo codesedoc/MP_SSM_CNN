@@ -9,9 +9,8 @@ import model as model_py
 import utils.simple_progress_bar as simple_progress_bar
 import model.pre_process as pre_process
 import time
-def null_grad_fn(x):
-    print(x)
-    pass
+import utils.visualization_tool as visualization_tool
+import utils.log_tool as log_tool
 
 
 class MSRPLoss(torch.nn.Module):
@@ -20,7 +19,7 @@ class MSRPLoss(torch.nn.Module):
 
     def forward(self, outputs, labels):
         batch_size = outputs.size()[0]
-
+        correct_count = 0
         if outputs.is_cuda != labels.is_cuda:
             raise TypeError
 
@@ -35,15 +34,17 @@ class MSRPLoss(torch.nn.Module):
             ground_score = out[int(labels[i])]
             for j,yi in enumerate(out):
                 if j != labels[i]:
-                    l += max(yi-ground_score +1, 0)
+                    l += max(yi-ground_score + 1, 0)
+            if out.argmax() == labels[i]:
+                correct_count +=1
             l_sum += l
-        l_sum / batch_size
+        l_sum = l_sum / batch_size
         if not isinstance(l_sum, torch.Tensor):
             raise ValueError
 
         if l_sum.grad_fn is None:
             l_sum.requires_grad =True
-        return l_sum
+        return l_sum, correct_count
 
 
 def evaluation(test_loader, train_model):
@@ -70,16 +71,21 @@ def training(train_manager, epoch, learn_model, test_manager=None, ):
         test_loader =None
     losser = MSRPLoss()
     losser.cuda()
-    optimizer = torch.optim.SGD(params=learn_model.parameters(), lr=model_py.learn_rate)
+    optimizer = torch.optim.SGD(params=learn_model.parameters(), lr=model_py.learn_rate, momentum=0.8)
+
+    train_accuracy_list = []
+    test_accuracy_list =[]
     for e in range(epoch):
         loss_sum = 0
         batch_number = len(train_loader)
+        correct_count = 0
+        print('training {}-th epoch'.format(e + 1))
         for index, training_example in enumerate(train_loader):
             input_sentence1s, input_sentence2s, labels = training_example
             optimizer.zero_grad()
             result = learn_model(input_sentence1s, input_sentence2s)
-            loss = losser(result, labels)
-
+            loss, cor_count = losser(result, labels)
+            correct_count += cor_count
             if model_py.show_run_time:
                 start = time.time()
                 loss.backward()
@@ -92,9 +98,29 @@ def training(train_manager, epoch, learn_model, test_manager=None, ):
             loss_sum += loss
             pb.update((index+1) * 100 / batch_number)
             # print('{}-th epoch, {}-th batch  loss:{}'.format(e+1, index+1, loss))
+        print()
+        print()
+        train_accuracy = correct_count / train_manager.get_count_of_examples()
+        if model_py.log_model_data_flag:
+            log_tool.model_result_logger.info('epoch:{} train_accuracy:{}  arg_loss:{}'.format(e + 1, train_accuracy, loss_sum/batch_number))
+        else:
+            print('epoch:{} train_accuracy:{}  arg_loss:{}'.format(e + 1, train_accuracy, loss_sum/batch_number))
+        train_accuracy_list.append(('epoch:{}'.format(e+1), train_accuracy))
         if test_manager is not None:
-            accuracy = evaluation(test_loader, learn_model)
-            print('epoch:{}  accuracy:{}  arg_loss:{}'.format(e+1, accuracy, loss_sum/batch_number))
+            test_accuracy = evaluation(test_loader, learn_model)
+            if model_py.log_model_data_flag:
+                log_tool.model_result_logger.info('test_accuracy:{}'.format(test_accuracy))
+            else:
+                print('test_accuracy:{}'.format(test_accuracy))
+            test_accuracy_list.append(('epoch:{}'.format(e+1), test_accuracy))
+        print()
+    test_accuracy_list_filename = file_tool.PathManager.append_filename_to_dir_path(file_tool.PathManager.model_path, filename='test_accuracy', extent='pkl')
+    train_accuracy_list_filename = file_tool.PathManager.append_filename_to_dir_path(file_tool.PathManager.model_path, filename='train_accuracy', extent='pkl')
+    file_tool.save_data_pickle(test_accuracy_list, test_accuracy_list_filename)
+    # test_accuracy_list_t = file_tool.load_data_pickle(test_accuracy_list_filename)
+
+    file_tool.save_data_pickle(train_accuracy_list, train_accuracy_list_filename)
+    # train_accuracy_list_t = file_tool.load_data_pickle(train_accuracy_list_filename)
     file_tool.save_data_pickle(learn_model, file_tool.PathManager.entire_model_file)
 
 
@@ -110,17 +136,32 @@ def get_learn_model(rebuild=False , use_gpu =False):
     return learn_model
 
 
+def prepare_data(rebuild_data_manager=False, use_gpu = False):
+    train_manager, test_manager = data_tool.get_msrpc_manager(re_build=rebuild_data_manager)
+    processor = pre_process.Preprocessor()
+    train_manager = processor.pre_process(data_manager=train_manager, batch_size=64, use_gpu=use_gpu, data_align=True,
+                                          remove_error_word_vector=True, rebuild=rebuild_data_manager)
+    test_manager = processor.pre_process(data_manager=test_manager, batch_size=64, use_gpu=use_gpu, data_align=True,
+                                         remove_error_word_vector=True, rebuild=rebuild_data_manager)
+    return  train_manager,test_manager
+
 def main(rebuild_model=False, rebuild_data_manager=False, use_gpu = False):
     begin_time = time.time()
-    learn_model = get_learn_model(rebuild=rebuild_model , use_gpu=use_gpu)
-    train_manager, test_manager = data_tool.get_msrpc_manager(re_build=False)
-    processor = pre_process.Preprocessor()
-    train_manager = processor.pre_process(data_manager=train_manager, batch_size=64, use_gpu=use_gpu, data_align= True, remove_error_word_vector=True, rebuild=rebuild_data_manager)
-    test_manager = processor.pre_process(data_manager=test_manager, batch_size=64, use_gpu=use_gpu, data_align= True, remove_error_word_vector=True, rebuild=rebuild_data_manager)
+    learn_model = get_learn_model(rebuild=rebuild_model, use_gpu=use_gpu)
+    train_manager, test_manager = prepare_data(rebuild_data_manager=rebuild_data_manager, use_gpu=use_gpu)
     end_time = time.time()
     print('prepare_time：{}'.format(end_time-begin_time))
-    training(train_manager, 500, learn_model, test_manager)
+
+    # visualize_model(learn_model, train_manager)
+    training(train_manager, 1000, learn_model, test_manager)
+
+
+def visualize_model(learn_model, data_manager):
+    input_data = data_manager.get_an_input()
+    filename = visualization_tool.create_log_filename()
+    visualization_tool.log_graph(filename= filename, nn_model=learn_model, input_data=input_data, comment='entire_model_graph')
+    visualization_tool.run_tensorboard_command()
 
 
 if __name__ == "__main__":
-    main(rebuild_model=True, rebuild_data_manager=True, use_gpu=False)
+    main(rebuild_model=True, rebuild_data_manager=False, use_gpu=True)

@@ -33,6 +33,7 @@ class MSRPInput(DataItem):
         word_dictionary = word_embedding.get_dictionary_instance()
         self.no_find_word_list = []
         self.no_find_word_dict = {}
+        self.remove_default_word_vector = False
         if type(self.original_data) != str:
             raise ValueError
         new_sentence = []
@@ -49,6 +50,7 @@ class MSRPInput(DataItem):
                     self.no_find_word_list.append((word, vector))
                     self.no_find_word_dict[word] = vector
         self.sentence = np.array(new_sentence, dtype=np.float)
+        self.sentence_length = len(self.sentence)
 
     def align_sentence(self, length):
         shape = self.sentence.shape
@@ -72,6 +74,7 @@ class MSRPInput(DataItem):
         return result
 
     def remove_word_not_in_embedding_dictionary(self):
+        self.remove_default_word_vector -=self.remove_default_word_vector
         default_vector = word_embedding.get_dictionary_instance().default_vector()
         temp = []
         for  i in range(len(self.sentence)):
@@ -79,6 +82,7 @@ class MSRPInput(DataItem):
                 temp.insert(0,i)
         for index in temp:
             self.sentence = np.delete(self.sentence, index, axis=0)
+        self.sentence_length = len(self.sentence)
         # print(self.sentence )
 
 
@@ -176,7 +180,6 @@ class MyDataSet(torch_data.dataset.Dataset):
         for r in result:
             if not isinstance(r, torch.Tensor):
                 raise TypeError
-
         return result
 
     def set_data_type_to_gpu(self):
@@ -210,6 +213,10 @@ class DataManager:
         pass
         # return torch_data.dataloader.DataLoader(self.data_set, batch_size=batch_size)
 
+    @abstractmethod
+    def get_an_input(self, batch_size):
+        raise RuntimeError('Do not implement this method')
+
 
 class MSRPDataManager(DataManager):
     def __init__(self, original_file, name):
@@ -219,6 +226,7 @@ class MSRPDataManager(DataManager):
         self.number_of_word_not_in_dictionary = 0
         self.number_of_word = 0
         self.name = name
+        self.sentence_pairs = []
         DataManager.__init__(self, original_file)
 
     def format_original_data(self):
@@ -233,6 +241,7 @@ class MSRPDataManager(DataManager):
             label = MSRPLabel(result[0])
             input_sentence1 = MSRPInput(result[3])
             input_sentence2 = MSRPInput(result[4])
+            self.sentence_pairs.append((input_sentence1,input_sentence2))
             example = MSRPDataExample(input_sentence1=input_sentence1, input_sentence2=input_sentence2, label=label)
             example_list.append(example)
             word_count += len(input_sentence1.sentence) + len(input_sentence2.sentence)
@@ -255,15 +264,19 @@ class MSRPDataManager(DataManager):
             batch_size = self.batch_size
         return torch_data.dataloader.DataLoader(self.data_set, batch_size=batch_size, drop_last=drop_last)
 
+    def get_an_input(self):
+        example = self.data_set[0]
+        return example[0].unsqueeze(dim=0), example[1].unsqueeze(dim=0)
+
+
     def get_max_length_of_sentence(self):
         if self.max_length == -1:
             max_length = 0
-            for data in self.data_set:
-                input_data = data[0]
-                if len(input_data) > max_length:
-                    max_length = len(input_data)
+            for pair in self.sentence_pairs:
+                for sentence in pair:
+                    if sentence.sentence_length > max_length:
+                        max_length = sentence.sentence_length
             self.max_length = max_length
-
         return self.max_length
 
     def set_data_gpu_type(self, use_gpu):
@@ -278,6 +291,9 @@ class MSRPDataManager(DataManager):
 
     def remove_word_not_in_embedding_dictionary(self):
         self.data_set.remove_word_not_in_embedding_dictionary()
+
+    def get_count_of_examples(self):
+        return len(self.data_set)
 
 
 MSRPC_Train_Manager_Single_Instance = None
