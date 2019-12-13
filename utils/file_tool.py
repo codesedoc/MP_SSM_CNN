@@ -55,7 +55,7 @@ class PathManager:
     result_path = os.path.join(base_dir, 'result')
     log_path = os.path.join(result_path,'log')
     error_glove_embedding_data_file = os.path.join(log_path, 'error_glove_embedding_data.txt')
-    word_no_in_dictionary_file = os.path.join(log_path, 'word_no_in_dictionary')
+    word_no_in_dictionary_file = os.path.join(log_path, 'word_no_in_dictionary.txt')
     model_log_path =  os.path.join(log_path, "model_log")
     model_running_data_log_file = os.path.join(model_log_path, "model_running_data")
 
@@ -72,7 +72,7 @@ class PathManager:
     def change_filename_by_append(file_path, append_str):
         (dir_path, file_name_ext) = os.path.split(file_path)
         (filename, extension) = os.path.splitext(file_name_ext)
-        new_path = dir_path+r'\r'+filename + append_str +extension
+        new_path = dir_path+r'/'+filename + '_' + append_str +extension
         return new_path
 
     @staticmethod

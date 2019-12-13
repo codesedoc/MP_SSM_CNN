@@ -566,3 +566,4 @@
 2019-12-12 21:49:58 - INFO - test_accuracy:1.0
 2019-12-12 21:50:08 - INFO - epoch:282 train_accuracy:1.0  arg_loss:0.0
 2019-12-12 21:50:15 - INFO - test_accuracy:1.0
+2019-12-13 13:21:41 - INFO - epoch:1 train_accuracy:0.6469578017664377  arg_loss:0.8142126202583313
