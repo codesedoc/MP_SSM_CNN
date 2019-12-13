@@ -1,6 +1,6 @@
 import torch
 import model
-
+from abc import abstractmethod
 
 class MyMinPool1d(torch.nn.MaxPool1d):
 
@@ -15,6 +15,20 @@ pooling_model_dict = {
     'min': MyMinPool1d,
     'mean': torch.nn.AvgPool1d
 }
+
+
+class Block(torch.nn.Module):
+    def __init__(self, **kwargs):
+        super().__init__()
+        self.wws = kwargs['wss']
+        self.poolings = kwargs['poolings']
+        self.filter_number = kwargs["filter_number"]
+        self.word_vector_dim = kwargs['word_vector_dim']
+        self.con_model_list, self.pooling_list = self.create_submodels()
+
+    @abstractmethod
+    def create_submodels(self):
+        raise RuntimeError("Do implement this method!")
 
 # blook_type = ['BlockA', 'BlockB']
 
@@ -67,11 +81,23 @@ def create_block_b(wss, poolings, number, word_vector_dim):
         pooling_model_list.append(pooling(kernel_size=0, stride=1))
     return con_model_list, pooling_model_list
 
-class BlockB(torch.nn.Module):
-    def __init__(self, con_model_list, pooling_list):
-        super().__init__()
-        self.con_model_list = torch.nn.ModuleList(con_model_list)
-        self.pooling_list = torch.nn.ModuleList(pooling_list)
+
+class BlockB(Block):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def create_submodels(self):
+        con_model_list = []
+        pooling_model_list = []
+        for i, ws in enumerate(self.wss):
+            dim_model_list = []
+            for j in range(self.word_vector_dim):
+                dim_model_list.append(torch.nn.Conv1d(in_channels=1, out_channels=self.filter_number, kernel_size=ws))
+            dim_model_list = torch.nn.ModuleList(dim_model_list)
+            con_model_list.append(dim_model_list)
+        for i, pooling in enumerate(self.poolings):
+            pooling_model_list.append(pooling(kernel_size=0, stride=1))
+        return con_model_list, pooling_model_list
 
     def forward(self, input_data):
         result = torch.Tensor(len(input_data), len(self.pooling_list), len(self.con_model_list),
@@ -87,15 +113,19 @@ class BlockB(torch.nn.Module):
                         result[i][pool_index][con_index][dim_index] = pooling_result[i].squeeze[1]
         return result
 
+
+
+
+
 class SentenceModel(torch.nn.Module):
-    def __init__(self, block_type, wss, poolings, number, word_vector_dim):
+    def __init__(self, block_type, wss, poolings, filter_number, word_vector_dim):
         super().__init__()
         if block_type == "BlockA":
             con_model_list,pooling_model_list = create_block_a(wss=wss, poolings=poolings,number=number,word_vector_dim=word_vector_dim)
             self.Block = BlockA(con_model_list,pooling_model_list)
         else:
-            con_model_list,pooling_model_list =create_block_b(wss=wss, poolings=poolings,number=number,word_vector_dim=word_vector_dim)
-            self.Block = BlockB(con_model_list,pooling_model_list)
+            con_model_list,pooling_model_list =create_block_b()
+            self.Block = BlockB(wss=wss, poolings=poolings, filter_number=filter_number,word_vector_dim=word_vector_dim)
 
     def forward(self, input_data):
         return self.Block(input_data)
