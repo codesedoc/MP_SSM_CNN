@@ -71,7 +71,7 @@ def training(train_manager, epoch, learn_model, test_manager=None, ):
         test_loader =None
     losser = MSRPLoss()
     losser.cuda()
-    optimizer = torch.optim.SGD(params=learn_model.parameters(), lr=model_py.learn_rate, momentum=0.8)
+    optimizer = torch.optim.SGD(params=learn_model.parameters(), lr=model_py.learn_rate, momentum=0.9)
 
     train_accuracy_list = []
     test_accuracy_list =[]
@@ -126,7 +126,7 @@ def training(train_manager, epoch, learn_model, test_manager=None, ):
 
 def get_learn_model(rebuild=False , use_gpu =False):
     if rebuild:
-        learn_model = entire_model.EntireModel(number=model_py.num_filter_a, word_vector_dim=300, compare_unit_names=model_py.compare_unit_names, wss= model_py.wss)
+        learn_model = entire_model.EntireModel()
     else:
         learn_model = file_tool.load_data_pickle(file_tool.PathManager.entire_model_file)
     if use_gpu:
@@ -153,7 +153,7 @@ def main(rebuild_model=False, rebuild_data_manager=False, use_gpu = False):
     print('prepare_time：{}'.format(end_time-begin_time))
 
     # visualize_model(learn_model, train_manager)
-    training(train_manager, 1000, learn_model, test_manager)
+    training(train_manager, 2000, learn_model, test_manager)
 
 
 def visualize_model(learn_model, data_manager):

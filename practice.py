@@ -158,14 +158,18 @@ import torch
 # up=torch.nn.Upsample(scale_factor=2)
 # print(up(x).size())
 
-x = torch.arange(9).reshape(3,3)
-x=x.type(torch.float)
-x.requires_grad =True
+# x = torch.arange(9).reshape(3,3)
+# x=x.type(torch.float)
+# x.requires_grad =True
+#
+# c = (x**3).sum()
+#
+# y=c
+# # y.backward(gradient=torch.tensor(1,dtype=torch.float), keep_graph=True)
+# print(y.grad)
+# print(c.grad)
+# print(x.grad)
 
-c = (x**3).sum()
-
-y=c
-# y.backward(gradient=torch.tensor(1,dtype=torch.float), keep_graph=True)
-print(y.grad)
-print(c.grad)
-print(x.grad)
+x=torch.rand(255,255,16,16).cuda()
+up=torch.nn.Upsample(scale_factor=2)
+print(up(x).size())

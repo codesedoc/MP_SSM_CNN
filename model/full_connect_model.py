@@ -12,6 +12,7 @@ class FullConnectModel(torch.nn.Module):
         active_list[-1] = torch.nn.LogSoftmax(dim=-1)
         self.layer_list =  torch.nn.ModuleList(layer_list)
         self.active_list = torch.nn.ModuleList(active_list)
+        
     def forward(self, input_data):
         # input_data = input_data.permute(1, 0, 2)
         result = input_data
