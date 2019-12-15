@@ -71,7 +71,9 @@ def training(train_manager, epoch, learn_model, test_manager=None, ):
         test_loader =None
     losser = MSRPLoss()
     losser.cuda()
-    optimizer = torch.optim.SGD(params=learn_model.parameters(), lr=model_py.learn_rate, momentum=0.9)
+    momentum = model_py.sgd_momentum
+    log_tool.model_result_logger.info("momentum = {}".format(momentum))
+    optimizer = torch.optim.SGD(params=learn_model.parameters(), lr=model_py.learn_rate, momentum=momentum)
 
     train_accuracy_list = []
     test_accuracy_list =[]
@@ -139,9 +141,9 @@ def get_learn_model(rebuild=False , use_gpu =False):
 def prepare_data(rebuild_data_manager=False, use_gpu = False):
     train_manager, test_manager = data_tool.get_msrpc_manager(re_build=rebuild_data_manager)
     processor = pre_process.Preprocessor()
-    train_manager = processor.pre_process(data_manager=train_manager, batch_size=64, use_gpu=use_gpu, data_align=True,
+    train_manager = processor.pre_process(data_manager=train_manager, batch_size=model_py.batch_size, use_gpu=use_gpu, data_align=True,
                                           remove_error_word_vector=True, rebuild=rebuild_data_manager)
-    test_manager = processor.pre_process(data_manager=test_manager, batch_size=64, use_gpu=use_gpu, data_align=True,
+    test_manager = processor.pre_process(data_manager=test_manager, batch_size=model_py.batch_size, use_gpu=use_gpu, data_align=True,
                                          remove_error_word_vector=True, rebuild=rebuild_data_manager)
     return  train_manager,test_manager
 
@@ -153,15 +155,37 @@ def main(rebuild_model=False, rebuild_data_manager=False, use_gpu = False):
     print('prepare_time：{}'.format(end_time-begin_time))
 
     # visualize_model(learn_model, train_manager)
-    training(train_manager, 2000, learn_model, test_manager)
+    momentum = [0.2, 0.4, 0.6, 0.8]
+    log_tool.model_result_logger.info("with test")
+    for i, m in enumerate(momentum):
+        model_py.sgd_momentum = m
+        training(train_manager, 80, learn_model)
+
+    # model_py.sgd_momentum = 0.2
+    # training(train_manager, , learn_model, test_manager)
+    #
+    # model_py.sgd_momentum = 0.4
+    # training(train_manager, 2, learn_model, test_manager)
+    #
+    # model_py.sgd_momentum = 0.6
+    # training(train_manager, 2, learn_model, test_manager)
+    #
+    # model_py.sgd_momentum = 0.8
+    # training(train_manager, 2, learn_model, test_manager)
+
+    momentum = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
+    log_tool.model_result_logger.info("without test")
+    for i, m in enumerate(momentum):
+        model_py.sgd_momentum = m
+        training(train_manager, 20, learn_model)
 
 
 def visualize_model(learn_model, data_manager):
     input_data = data_manager.get_an_input()
     filename = visualization_tool.create_log_filename()
     visualization_tool.log_graph(filename= filename, nn_model=learn_model, input_data=input_data, comment='entire_model_graph')
-    visualization_tool.run_tensorboard_command()
+    # visualization_tool.run_tensorboard_command()
 
 
 if __name__ == "__main__":
-    main(rebuild_model=True, rebuild_data_manager=False, use_gpu=True)
+    main(rebuild_model=True, rebuild_data_manager=True, use_gpu=True)

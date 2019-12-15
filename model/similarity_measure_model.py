@@ -104,17 +104,24 @@ class ComparisonModel(torch.nn.Module):
     def compare_algorithm(self):
         pass
 
-    @abstractmethod
     def cos_distance(self, tensor1, tensor2):
-        raise RuntimeError('Do not implement this method')
+        self.check_distance_input_data(tensor1, tensor2)
+        result = torch.nn.functional.normalize(tensor1, dim=1).mm(
+            torch.nn.functional.normalize(tensor2, dim=1).T).squeeze()
+        result = result.diag(diagonal=0)
+        return result
 
-    @abstractmethod
     def l2_distance(self, tensor1, tensor2):
-        raise RuntimeError('Do not implement this method')
+        self.check_distance_input_data(tensor1, tensor2)
+        result = torch.sum(torch.pow(tensor1 - tensor2, 2), dim=1)
+        result = revise_zero_data(result)
+        result = torch.sqrt(result)
+        return result
 
-    @abstractmethod
     def l1_distance(self, tensor1, tensor2):
-        raise RuntimeError('Do not implement this method')
+        self.check_distance_input_data(tensor1, tensor2)
+        result = torch.sum(torch.abs(tensor1 - tensor2), dim=1)
+        return result
 
     @staticmethod
     def check_distance_input_data(x, y):
@@ -189,24 +196,7 @@ class HorizontalComparisonModel(ComparisonModel):
     #             temp1 = torch.nn.functional.normalize(input_data1_temp[s][i],dim=0).dot(torch.nn.functional.normalize(input_data2_temp[s][i],dim=0)).squeeze()
     #             result[s][i] = torch.stack([temp1, temp2,temp3],dim=0)
     #     return result
-    def cos_distance(self, tensor1, tensor2):
-        self.check_distance_input_data(tensor1, tensor2)
-        result = torch.nn.functional.normalize(tensor1, dim=1).mm(
-            torch.nn.functional.normalize(tensor2, dim=1).T).squeeze()
-        result = result.diag(diagonal=0)
-        return result
 
-    def l2_distance(self, tensor1, tensor2):
-        self.check_distance_input_data(tensor1, tensor2)
-        result = torch.sum(torch.pow(tensor1 - tensor2, 2), dim=1)
-        result = revise_zero_data(result)
-        result = torch.sqrt(result)
-        return result
-
-    def l1_distance(self, tensor1, tensor2):
-        self.check_distance_input_data(tensor1, tensor2)
-        result = torch.sum(torch.abs(tensor1 - tensor2), dim=1)
-        return result
 
 
     def compare_algorithm_method4(self, input_data1, input_data2):
@@ -299,17 +289,10 @@ class VerticalComparisonModelForBlockA(ComparisonModel):
         if shape1 != shape2:
             raise ValueError
         shape = shape1
-        # result = torch.Tensor(shape[0], shape[1], shape1[2]*shape2[2], 3)
         result = []
         for s in range(shape[0]):
             result_temp = []
             for p in range(shape[1]):
-                # temp1 = torch.nn.functional.normalize(input_data1[s][p], dim=1).mm(
-                #     torch.nn.functional.normalize(input_data2[s][p], dim=1).T).reshape(-1, 1)
-                # temp2 = torch.cdist(input_data1[s][p], input_data2[s][p]).reshape(-1, 1)
-                # temp3 = torch.cdist(input_data1[s][p], input_data2[s][p], p=1).reshape(-1, 1)
-                #
-
                 x = input_data1[s][p]
                 y = input_data2[s][p]
                 temp = []
@@ -326,25 +309,49 @@ class VerticalComparisonModelForBlockA(ComparisonModel):
         return result
 
 class VerticalComparisonModelForBlockB(ComparisonModel):
+    # def compare_algorithm_old(self, input_data1, input_data2):
+    #     result_batch = []
+    #     for s in range(len(input_data1)):
+    #         result = []
+    #         for pool_index in range(len(input_data1[s])):
+    #             for ws in range(len(input_data1[s][pool_index])):
+    #                 for num in range(len(input_data1[s][pool_index][ws])):
+    #                     # for compare_unit in self.compare_units:
+    #                     #     temp = compare_unit(input_data1[s][pool_index][ws][num], input_data2[s][pool_index][ws][num])
+    #                     #     requirs_grad = temp.requirs_grad
+    #                     #     temp = temp.data
+    #                     #     result.append(temp)
+    #                     temp = calculate_compare_units(input_data1[s][pool_index][ws].index_select(dim=1,index=torch.LongTensor([num])).squeeze(dim=1), input_data2[s][pool_index][ws].index_select(dim=1,index=torch.LongTensor([num])).squeeze(dim=1),
+    #                                                    self.compare_units)
+    #                     result.append(temp)
+    #         result = torch.stack(result, dim=0)
+    #         result_batch.append(result)
+    #     result_batch = torch.stack(result_batch, dim=0)
+    #     # result_batch = torch.autograd.Variable(result_batch,requirs_grad=requirs_grad)
+    #     return result_batch
     def compare_algorithm(self, input_data1, input_data2):
         result_batch = []
         for s in range(len(input_data1)):
             result = []
             for pool_index in range(len(input_data1[s])):
                 for ws in range(len(input_data1[s][pool_index])):
-                    for num in range(len(input_data1[s][pool_index][ws])):
-                        # for compare_unit in self.compare_units:
-                        #     temp = compare_unit(input_data1[s][pool_index][ws][num], input_data2[s][pool_index][ws][num])
-                        #     requirs_grad = temp.requirs_grad
-                        #     temp = temp.data
-                        #     result.append(temp)
-                        temp = calculate_compare_units(input_data1[s][pool_index][ws][num], input_data2[s][pool_index][ws][num],
-                                                       self.compare_units)
-                        result.append(temp)
-            result = torch.stack(result, dim=0)
-            result_batch.append(result)
-        result_batch = torch.stack(result_batch, dim=0)
-        # result_batch = torch.autograd.Variable(result_batch,requirs_grad=requirs_grad)
+                    x = input_data1[s][pool_index][ws].T
+                    y = input_data2[s][pool_index][ws].T
+                    # temp1 = torch.nn.functional.normalize(x, dim=1).mm(
+                    #     torch.nn.functional.normalize(y, dim=1).T).diag(diagonal=0)
+                    # temp2 = torch.sum(torch.pow(x - y, 2), dim=1)
+                    # temp2 = revise_zero_data(temp2)
+                    # temp2 = torch.sqrt(temp2)
+                    #
+                    # temp3 = torch.sum(torch.abs(x - y), dim=1)
+                    # temp = torch.stack([temp1, temp2, temp3], dim=1)
+                    temp = []
+                    for compare_unit in self.compare_units:
+                        t = compare_unit(x, y)
+                        temp.append(t)
+                    result_batch.append(torch.stack(temp, dim=1))
+        result_batch = torch.cat(result_batch, dim=0)
+        result_batch = result_batch.reshape(input_data1.shape[0], -1, len(self.compare_units))
         return result_batch
 
 
@@ -355,10 +362,13 @@ compare_model_dict = {
 }
 
 
+
 class SimilarityMeasureModel(torch.nn.Module):
-    def __init__(self, compare_model_names, compare_unit_names):
+    def __init__(self, *args, **kwargs):
         super().__init__()
         # compare_units=create_compare_units(compare_units)
+        compare_model_names = model_init.compare_model_names
+        compare_unit_names = model_init.compare_unit_names
         self.compare_model_dict = {}
         self.compare_model_list = []
         for i, model_name in enumerate(compare_model_names):
@@ -367,13 +377,6 @@ class SimilarityMeasureModel(torch.nn.Module):
             compare_model = compare_model_dict[model_name](compare_unit_names)
             self.compare_model_dict[model_name] = i
             self.compare_model_list.append(compare_model)
-        # if horizontal_compare:
-        #     self.compare_model = HorizontalComparisonModel(compare_unit_names)
-        # else:
-        #     if block_type == 'BloackA':
-        #         self.compare_model = VerticalComparisonModelForBlockA(compare_unit_names)
-        #     else:
-        #         self.compare_model = VerticalComparisonModelForBlockB(compare_unit_names)
         self.compare_model_list = torch.nn.ModuleList(self.compare_model_list)
         self.current_compare_model = None
 
@@ -385,12 +388,28 @@ class SimilarityMeasureModel(torch.nn.Module):
         result = result.reshape(result.size()[0], -1)
         return result
 
-    def cuda(self, *args, **kwargs):
-        super().cuda(*args, **kwargs)
-        for block in self.compare_model_dict.values():
-            block.cuda()
 
-    def cpu(self):
-        super().cpu()
-        for block in self.compare_model_dict.values():
-            block.cpu()
+def test():
+    m = SimilarityMeasureModel()
+    m.change_current_compare_model("VerticalForBlockB")
+    t1 = torch.rand(64, 2, 3, 300, 25, requires_grad=True)
+    t2 = torch.rand(64, 2, 3, 300, 25, requires_grad=True)
+
+    start = time.time()
+    result = m(t1,t2)
+    result.backward(torch.ones(*result.size()))
+    end = time.time()
+    print("cpu:{}".format(end - start))
+
+    t1 = t1.cuda()
+    t2 = t2.cuda()
+    m.cuda()
+    start = time.time()
+    result = m(t1, t2)
+    result.backward(torch.ones(*result.size()).cuda())
+    end = time.time()
+    print("gpu:{}".format(end - start))
+    pass
+
+if __name__ == "__main__":
+    test()

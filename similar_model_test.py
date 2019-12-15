@@ -130,6 +130,80 @@ def compare_v3(input_data1, input_data2):
     result = result.reshape(shape[0],-1, 3)
     return result
 
+
+def VerticalB1(input_data1, input_data2):
+    result_batch = []
+    compare_units = [cos_distance, l2_distance, l1_distance]
+    for s in range(len(input_data1)):
+        result = []
+        for pool_index in range(len(input_data1[s])):
+            for ws in range(len(input_data1[s][pool_index])):
+                for num in range(len(input_data1[s][pool_index][ws][0])):
+                    # for compare_unit in self.compare_units:
+                    #     temp = compare_unit(input_data1[s][pool_index][ws][num], input_data2[s][pool_index][ws][num])
+                    #     requirs_grad = temp.requirs_grad
+                    #     temp = temp.data
+                    #     result.append(temp)
+                    index = torch.LongTensor([num])
+                    if input_data1.is_cuda:
+                        index = index.cuda()
+                    temp = calculate_compare_units(input_data1[s][pool_index][ws].index_select(dim=1,index=index).squeeze(dim=1), input_data2[s][pool_index][ws].index_select(dim=1,index=index).squeeze(dim=1),
+                                                   compare_units)
+                    result.append(temp)
+        result = torch.stack(result, dim=0)
+        result_batch.append(result)
+    result_batch = torch.stack(result_batch, dim=0)
+    # result_batch = torch.autograd.Variable(result_batch,requirs_grad=requirs_grad)
+    return result_batch
+
+def VerticalB2(input_data1, input_data2):
+    result_batch = []
+    compare_units = [cos_distance, l2_distance, l1_distance]
+    for s in range(len(input_data1)):
+        result = []
+        for pool_index in range(len(input_data1[s])):
+            for ws in range(len(input_data1[s][pool_index])):
+                x = input_data1[s][pool_index][ws].T
+                y = input_data2[s][pool_index][ws].T
+                temp1 = torch.nn.functional.normalize(x, dim=1).mm(
+                    torch.nn.functional.normalize(y, dim=1).T).diag(diagonal=0)
+                temp2 = torch.sum(torch.pow(x - y, 2), dim=1)
+                temp2 = revise_zero_data(temp2)
+                temp2 = torch.sqrt(temp2)
+
+                temp3 = torch.sum(torch.abs(x - y), dim=1)
+                temp = torch.stack([temp1, temp2, temp3], dim=1)
+
+                result.append(temp)
+        result = torch.cat(result, dim=0)
+        result_batch.append(result)
+    result_batch = torch.stack(result_batch, dim=0)
+    # result_batch = torch.autograd.Variable(result_batch,requirs_grad=requirs_grad)
+    return result_batch
+
+def VerticalB3(input_data1, input_data2):
+    result_batch = []
+    compare_units = [cos_distance, l2_distance, l1_distance]
+    for s in range(len(input_data1)):
+        for pool_index in range(len(input_data1[s])):
+            for ws in range(len(input_data1[s][pool_index])):
+                x = input_data1[s][pool_index][ws].T
+                y = input_data2[s][pool_index][ws].T
+                temp1 = torch.nn.functional.normalize(x, dim=1).mm(
+                    torch.nn.functional.normalize(y, dim=1).T).diag(diagonal=0)
+                temp2 = torch.sum(torch.pow(x - y, 2), dim=1)
+                temp2 = revise_zero_data(temp2)
+                temp2 = torch.sqrt(temp2)
+
+                temp3 = torch.sum(torch.abs(x - y), dim=1)
+                temp = torch.stack([temp1, temp2, temp3], dim=1)
+
+                result_batch.append(temp)
+    result_batch = torch.cat(result_batch, dim=0)
+    result_batch = result_batch.reshape(input_data1.shape[0], -1 , len(compare_units))
+    # result_batch = torch.autograd.Variable(result_batch,requirs_grad=requirs_grad)
+    return result_batch
+
 def revise_zero_data(tensor):
     boundary = 0.0001**2
     flag_tensor = (tensor < boundary).type(torch.float)
@@ -143,25 +217,52 @@ def compara_tensor_data(data):
     temp = round(temp)
     return temp == 0
 
-t1 = torch.rand(64,3,3,50, requires_grad=True)
-t2 = torch.rand(64,3,3,50, requires_grad=True)
-start = time.time()
-result1 = compare_v1(t1, t2)
-result2 = compare_v2(t1, t2)
-result2.backward(torch.ones(*result2.size()))
-end = time.time()
-print("cpu:{}".format(end - start))
+# t1 = torch.rand(64,3,3,50, requires_grad=True)
+# t2 = torch.rand(64,3,3,50, requires_grad=True)
+# start = time.time()
+# result1 = compare_v1(t1, t2)
+# result2 = compare_v2(t1, t2)
+# result2.backward(torch.ones(*result2.size()))
+# end = time.time()
+# print("cpu:{}".format(end - start))
+#
+# t1 = t1.cuda()
+# t2 = t2.cuda()
+#
+# start = time.time()
+# # result1 = compare_v1(t1, t2)
+# result2 = compare_v2(t1, t2)
+# result2.backward(torch.ones(*result2.size()))
+# end = time.time()
+# print("gpu:{}".format(end - start))
+#
+# if not ((result1-result2).cpu().detach().apply_(compara_tensor_data)).type(torch.bool).all():
+#     raise ValueError
 
+
+t1 = torch.rand(1,2,3,300,25, requires_grad=True)
+t2 = torch.rand(1,2,3,300,25, requires_grad=True)
+
+start = time.time()
+result1 = VerticalB1(t1,t2)
+result2 = VerticalB3(t1, t2)
+end = time.time()
+result2.backward(torch.ones(*result2.size()))
+if not ((result1-result2).cpu().detach().apply_(compara_tensor_data)).type(torch.bool).all():
+    raise ValueError
+
+
+print("cpu:{}".format(end - start))
+#
 t1 = t1.cuda()
 t2 = t2.cuda()
-
+#
 start = time.time()
-# result1 = compare_v1(t1, t2)
-result2 = compare_v2(t1, t2)
-result2.backward(torch.ones(*result2.size()))
+# result1 = VerticalB1(t1, t2)
+result2 = VerticalB3(t1, t2)
+result2.backward(torch.ones(*result2.size()).cuda())
 end = time.time()
 print("gpu:{}".format(end - start))
 
-if not ((result1-result2).cpu().detach().apply_(compara_tensor_data)).type(torch.bool).all():
-    raise ValueError
+
 
