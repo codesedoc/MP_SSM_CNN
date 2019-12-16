@@ -159,7 +159,7 @@ def main(rebuild_model=False, rebuild_data_manager=False, use_gpu = False):
     log_tool.model_result_logger.info("with test")
     for i, m in enumerate(momentum):
         model_py.sgd_momentum = m
-        training(train_manager, 80, learn_model)
+        training(train_manager, 80, learn_model, test_manager)
 
     # model_py.sgd_momentum = 0.2
     # training(train_manager, , learn_model, test_manager)
