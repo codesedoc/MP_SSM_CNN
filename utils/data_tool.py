@@ -11,6 +11,8 @@ import os
 import random
 import utils.word_embedding as word_embedding
 from utils import word_embedding
+import math
+
 
 class DataItem:
     def __init__(self, original_data):
@@ -37,7 +39,8 @@ class MSRPInput(DataItem):
         if type(self.original_data) != str:
             raise ValueError
         new_sentence = []
-        for i,word in enumerate(self.original_data.split()):
+        self.original_sentence = self.original_data.split()
+        for i,word in enumerate(self.original_sentence):
             r=re.finditer(r'[^a-zA-Z]|[a-zA-Z]+',word)
             for part in r:
                 substr = word[part.span()[0] : part.span()[1]]
@@ -67,10 +70,11 @@ class MSRPInput(DataItem):
         self.sentence = np.concatenate([self.sentence, temp], axis=dim)
         # print(self.sentence)
 
-    def get_tensor(self, use_gpu):
+    def get_tensor(self, use_gpu = False):
         result = torch.from_numpy(self.sentence.T).type(torch.float32)
         if use_gpu:
             result = result.cuda()
+        self.tensor_sentence = result
         return result
 
     def remove_word_not_in_embedding_dictionary(self):
@@ -85,6 +89,8 @@ class MSRPInput(DataItem):
         self.sentence_length = len(self.sentence)
         # print(self.sentence )
 
+    def get_original_sentence(self):
+        return self.original_sentence
 
 class MSRPLabel(DataItem):
     def convert_data_form(self):
@@ -196,6 +202,13 @@ class MyDataSet(torch_data.dataset.Dataset):
         for data in self.data_array:
             data.remove_word_not_in_embedding_dictionary()
 
+    def get_some_example(self, count):
+        all_count = len(self.data_array)
+        if count > all_count:
+            raise RuntimeError
+        index = range(0, len(self.data_array),  math.ceil(all_count/count))
+        return [self.data_array[i].get_example_pair(self.use_gpu_flag) for i in index]
+
 
 class DataManager:
     def __init__(self, original_file):
@@ -217,6 +230,10 @@ class DataManager:
     def get_an_input(self, batch_size):
         raise RuntimeError('Do not implement this method')
 
+    @abstractmethod
+    def get_some_example(self, count):
+        raise RuntimeError('Do not implement this method')
+
 
 class MSRPDataManager(DataManager):
     def __init__(self, original_file, name):
@@ -227,7 +244,13 @@ class MSRPDataManager(DataManager):
         self.number_of_word = 0
         self.name = name
         self.sentence_pairs = []
+        self.original_example_dict ={}
         DataManager.__init__(self, original_file)
+
+    def update_original_example_dict(self,input_sentence1, input_sentence2, label):
+        if label not in self.original_example_dict:
+            self.original_example_dict[label] = []
+        self.original_example_dict[label] += [(input_sentence1, input_sentence2)]
 
     def format_original_data(self):
         example_list = []
@@ -235,13 +258,24 @@ class MSRPDataManager(DataManager):
         word_count = 0
         no_find_word_count = 0
         no_find_word_list = []
+        self.original_sentence_dict = {}
+        self.sentence_id_pairs = []
         for data in self.original_data:
-            re_pattern = r'.+?[\t\n]'
-            result=re.findall(re_pattern, data)
+            re_pattern = r'[\t\n]'
+            result=re.split(re_pattern, data)[:-1]
+            if len(result)!=5:
+                raise RuntimeError
             label = MSRPLabel(result[0])
             input_sentence1 = MSRPInput(result[3])
+            self.original_sentence_dict[result[1]] = result[3]
+            # if result[1] == '1785196':
+            #     pass
+            self.original_sentence_dict[result[2]] = result[4]
             input_sentence2 = MSRPInput(result[4])
             self.sentence_pairs.append((input_sentence1,input_sentence2))
+            self.sentence_id_pairs.append((int(result[1]), int(result[2])))
+            # self.original_examples.append((result[3],result[4],result[0]))
+            self.update_original_example_dict(result[3],result[4],result[0])
             example = MSRPDataExample(input_sentence1=input_sentence1, input_sentence2=input_sentence2, label=label)
             example_list.append(example)
             word_count += len(input_sentence1.sentence) + len(input_sentence2.sentence)
@@ -267,7 +301,6 @@ class MSRPDataManager(DataManager):
     def get_an_input(self):
         example = self.data_set[0]
         return example[0].unsqueeze(dim=0), example[1].unsqueeze(dim=0)
-
 
     def get_max_length_of_sentence(self):
         if self.max_length == -1:
@@ -295,6 +328,34 @@ class MSRPDataManager(DataManager):
     def get_count_of_examples(self):
         return len(self.data_set)
 
+    def get_some_original_example(self, count):
+        all_kind = len(self.original_example_dict.keys())
+        # count = 0
+        result = []
+        for key in self.original_example_dict.keys():
+            value = self.original_example_dict[key]
+            index = random.sample(range(0, len(value)), math.ceil(count/all_kind))
+            for example_index in index:
+                example = value[example_index]
+                result.append((example, key))
+        index = range(0, len(result))
+        index = random.sample(index, len(index))
+        temp = []
+        for i in index:
+            temp .append(result[i])
+        return temp[0:count]
+
+    def search_original_sentence_pair(self, sentence_rep_pair):
+        result = None
+        for pair in self.sentence_pairs:
+            if (pair[0].get_tensor().cpu() == sentence_rep_pair[0].cpu()).all() and (pair[1].get_tensor().cpu() == sentence_rep_pair[1].cpu()).all():
+                result = tuple([pair[0].original_data, pair[1].original_data ])
+        if result is None:
+            raise ValueError
+        return result
+
+    def search_original_sentence_pairs(self, sentence_rep_pairs):
+        return [self.search_original_sentence_pair(p) for p in sentence_rep_pairs]
 
 MSRPC_Train_Manager_Single_Instance = None
 MSRPC_Test_Manager_Single_Instance = None
@@ -322,26 +383,40 @@ def get_msrpc_manager(re_build = False):
     return MSRPC_Train_Manager_Single_Instance, MSRPC_Test_Manager_Single_Instance
 
 
+def get_some_example(count = 1):
+    get_msrpc_manager()
+    manager = MSRPC_Train_Manager_Single_Instance
+    return manager.get_some_example(count)
+
+
+def get_some_original_example(count = 1):
+    get_msrpc_manager()
+    manager = MSRPC_Train_Manager_Single_Instance
+    return manager.get_some_original_example(count)
+
+
 def test():
     train_manager = MSRPDataManager(file_tool.PathManager.msrpc_train_data_set_path)
     loader = train_manager.get_data_loader(batch_size=1, drop_last=True)
     train_data = []
     for batch_input1s, batch_input2s, batch_labels in loader:
         train_data.append((batch_input1s, batch_input2s ,batch_labels))
-
     count = 10
     repeat = 0
-
     index = [random.randint(0, 299) for i in range(count)]
-    batch1 = train_data[0][0][0][[0],index]
-    batch2 = train_data[0][1][0][[0],index]
-
+    batch1 = train_data[0][0][0][[0], index]
+    batch2 = train_data[0][1][0][[0], index]
     for i in range(count):
         if batch1[i]==batch2[i]:
             repeat += 1
     print('重复率：{}'.format(repeat/count))
-
     get_msrpc_manager(re_build=True)
 
+# get_msrpc_manager(re_build=True)
+
 if __name__ == '__main__':
-    test()
+    # test()
+
+    r = get_some_original_example(10)
+    r = r
+    pass

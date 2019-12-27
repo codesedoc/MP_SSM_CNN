@@ -12,6 +12,12 @@ def save_data(data, file_name, model):
         f.write(data)
 
 
+def save_list_data(data, file_name, model):
+    with open(file_name, model) as f:
+        for d in data:
+            f.write(d)
+            f.write('\n')
+
 def save_data_pickle(data, file_name):
     with open(file_name, 'wb') as f:
         pickle.dump(data, f)
